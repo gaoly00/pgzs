@@ -1,12 +1,29 @@
 'use client';
 
-import { use } from 'react';
+import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useSmartValStore } from '@/store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     ArrowLeft,
     BarChart3,
@@ -22,7 +39,8 @@ import {
     Landmark,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
-import { VALUATION_METHODS, type ValuationMethodKey } from '@/types';
+import { VALUATION_METHODS, type ValuationMethodKey, VALUATION_METHODS_CONFIG, ProjectValuationType } from '@/types';
+import { toast } from 'sonner';
 
 // ---- Module card definitions ----
 // methodKey maps to ValuationMethodKey; null = always visible (conclusion / report)
@@ -35,6 +53,16 @@ const moduleCards: {
     gradient: string;
     shadow: string;
 }[] = [
+        {
+            key: 'basic-info',
+            methodKey: null,
+            label: 'Basic Information',
+            description: '基础信息 — 项目核心信息管理',
+            icon: Building2,
+            gradient: 'from-gray-500 to-slate-500',
+            shadow: 'shadow-gray-500/20',
+        },
+        // --- Real Estate Methods ---
         {
             key: 'sales-comp',
             methodKey: 'sales-comp',
@@ -71,6 +99,53 @@ const moduleCards: {
             gradient: 'from-pink-500 to-rose-500',
             shadow: 'shadow-pink-500/20',
         },
+        // --- Land Methods ---
+        {
+            key: 'benchmark-land-price',
+            methodKey: 'benchmark-land-price',
+            label: 'Benchmark Land Price',
+            description: '公示地价系数修正法',
+            icon: MapPin,
+            gradient: 'from-indigo-500 to-purple-500',
+            shadow: 'shadow-indigo-500/20',
+        },
+        {
+            key: 'residual-method',
+            methodKey: 'residual-method',
+            label: 'Residual Method',
+            description: '剩余法',
+            icon: Ruler,
+            gradient: 'from-rose-500 to-red-500',
+            shadow: 'shadow-rose-500/20',
+        },
+        {
+            key: 'land-sales-comp', // Route? Might be same as 'sales-comp' but different logic? Using separate key for now.
+            methodKey: 'land-sales-comp',
+            label: 'Market Comparison (Land)',
+            description: '市场比较法 (土地)',
+            icon: BarChart3,
+            gradient: 'from-blue-500 to-cyan-500',
+            shadow: 'shadow-blue-500/20',
+        },
+        {
+            key: 'land-income',
+            methodKey: 'land-income',
+            label: 'Income Approach (Land)',
+            description: '收益还原法',
+            icon: TrendingUp,
+            gradient: 'from-amber-500 to-yellow-500',
+            shadow: 'shadow-amber-500/20',
+        },
+        {
+            key: 'cost-approach-land',
+            methodKey: 'cost-approach-land',
+            label: 'Cost Approach (Land)',
+            description: '成本逼近法',
+            icon: Calculator,
+            gradient: 'from-emerald-500 to-teal-500',
+            shadow: 'shadow-emerald-500/20',
+        },
+        // --- Common ---
         {
             key: 'conclusion',
             methodKey: null,
@@ -96,9 +171,53 @@ export default function ProjectDashboardPage({
 }: {
     params: Promise<{ id: string }>;
 }) {
-    const { id } = use(params);
+    // Unwrap params using React.use() for Next.js 15 compatibility
+    const unwrappedParams = use(params);
+
+    const id = unwrappedParams?.id;
+
+    // Use hooks at top level regardless of id presence (rules of hooks), but guard data access
     const project = useSmartValStore((s) => s.projects.find((p) => p.id === id));
+    const updateProject = useSmartValStore((s) => s.updateProject);
     const updateValuationMethods = useSmartValStore((s) => s.updateValuationMethods);
+
+    // Edit State
+    const [isEditOpen, setIsEditOpen] = useState(false);
+    const [editType, setEditType] = useState<ProjectValuationType>('real-estate');
+    const [editMethods, setEditMethods] = useState<ValuationMethodKey[]>([]);
+
+    useEffect(() => {
+        if (project && isEditOpen) {
+            setEditType(project.projectType || 'real-estate');
+            setEditMethods(project.valuationMethods || []);
+        }
+    }, [project, isEditOpen]);
+
+    const handleEditTypeChange = (type: ProjectValuationType) => {
+        setEditType(type);
+        // Auto-select defaults for new type
+        const defaults = VALUATION_METHODS_CONFIG[type].map(m => m.key);
+        setEditMethods(defaults);
+    };
+
+    const toggleEditMethod = (key: ValuationMethodKey) => {
+        setEditMethods((prev) =>
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+        );
+    };
+
+    const handleSaveSettings = () => {
+        if (!project) return;
+        updateProject(project.id, { projectType: editType });
+        updateValuationMethods(project.id, editMethods);
+        setIsEditOpen(false);
+        toast.success("Project settings updated");
+    };
+
+    // Loading state for unwrapped params
+    if (!unwrappedParams) {
+        return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
+    }
 
     if (!project) {
         return (
@@ -118,19 +237,11 @@ export default function ProjectDashboardPage({
         );
     }
 
-    // Ensure backward compat: old projects without the field default to ['sales-comp']
-    const enabledMethods: ValuationMethodKey[] = project.valuationMethods ?? ['sales-comp'];
-
-    const toggleMethod = (key: ValuationMethodKey) => {
-        const next = enabledMethods.includes(key)
-            ? enabledMethods.filter((k) => k !== key)
-            : [...enabledMethods, key];
-        updateValuationMethods(project.id, next);
-    };
-
     // Filter cards: show if methodKey is null (always) or if methodKey is in enabledMethods
+    // Also ensuring backward compatibility if valuationMethods is undefined
+    const currentMethods = project.valuationMethods ?? ['sales-comp'];
     const visibleCards = moduleCards.filter(
-        (mod) => mod.methodKey === null || enabledMethods.includes(mod.methodKey),
+        (mod) => mod.methodKey === null || currentMethods.includes(mod.methodKey),
     );
 
     return (
@@ -144,7 +255,69 @@ export default function ProjectDashboardPage({
                         </Button>
                     </Link>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
+                            <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="hidden sm:inline-flex h-6 text-xs text-muted-foreground hover:text-blue-600">
+                                        <Settings2 className="h-3 w-3 mr-1" />
+                                        修改项目类型和方法
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-2xl">
+                                    <DialogHeader>
+                                        <DialogTitle>项目配置</DialogTitle>
+                                        <DialogDescription>
+                                            修改项目类型及适用的估价方法。
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-6 py-4">
+                                        {/* Type */}
+                                        <div className="space-y-2">
+                                            <Label>项目类型</Label>
+                                            <Select
+                                                value={editType}
+                                                onValueChange={(v) => handleEditTypeChange(v as ProjectValuationType)}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="real-estate">房地产项目</SelectItem>
+                                                    <SelectItem value="land">土地项目</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        {/* Methods */}
+                                        <div className="space-y-2">
+                                            <Label>估价方法</Label>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border rounded-md bg-slate-50 dark:bg-slate-900/50">
+                                                {VALUATION_METHODS_CONFIG[editType].map((m) => (
+                                                    <label
+                                                        key={m.key}
+                                                        className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-colors ${editMethods.includes(m.key)
+                                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200'
+                                                            : 'hover:bg-slate-200 dark:hover:bg-slate-800'
+                                                            }`}
+                                                    >
+                                                        <Checkbox
+                                                            checked={editMethods.includes(m.key)}
+                                                            onCheckedChange={() => toggleEditMethod(m.key)}
+                                                        />
+                                                        <span className="text-sm font-medium">{m.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <DialogFooter>
+                                        <Button variant="outline" onClick={() => setIsEditOpen(false)}>取消</Button>
+                                        <Button onClick={handleSaveSettings}>保存修改</Button>
+                                    </DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
                         <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                                 <Calendar className="h-3.5 w-3.5" />
@@ -154,6 +327,13 @@ export default function ProjectDashboardPage({
                                 <Building2 className="h-3.5 w-3.5" />
                                 {project.propertyType || '—'}
                             </span>
+                            {project.projectNumber && (
+                                <span className="flex items-center gap-1">
+                                    <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+                                        {project.projectNumber}
+                                    </span>
+                                </span>
+                            )}
                             <span className="flex items-center gap-1">
                                 <Ruler className="h-3.5 w-3.5" />
                                 {project.gfa !== null ? `${formatCurrency(project.gfa)} ㎡` : '—'}
@@ -178,42 +358,7 @@ export default function ProjectDashboardPage({
                 </div>
             </div>
 
-            {/* Valuation Method Settings */}
-            <Card className="border-dashed">
-                <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                        <Settings2 className="h-4 w-4 text-muted-foreground" />
-                        <CardTitle className="text-base">估价方法设置</CardTitle>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        启用或禁用估价方法。禁用不会删除已录入的数据，仅隐藏入口。
-                    </p>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-wrap gap-4">
-                        {(Object.entries(VALUATION_METHODS) as [ValuationMethodKey, string][]).map(
-                            ([key, label]) => (
-                                <label
-                                    key={key}
-                                    className={`flex items-center gap-2.5 rounded-lg border px-4 py-2.5 cursor-pointer transition-all duration-200 hover:shadow-sm ${enabledMethods.includes(key)
-                                            ? 'border-blue-400 bg-blue-50/60 dark:bg-blue-950/20 shadow-sm'
-                                            : 'border-border hover:bg-accent/50'
-                                        }`}
-                                >
-                                    <Checkbox
-                                        id={`setting-method-${key}`}
-                                        checked={enabledMethods.includes(key)}
-                                        onCheckedChange={() => toggleMethod(key)}
-                                    />
-                                    <span className="text-sm font-medium select-none">{label}</span>
-                                </label>
-                            ),
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Module Cards */}
+            {/* Module Cards Only - No more Settings Card */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {visibleCards.map((mod) => (
                     <Link key={mod.key} href={`/projects/${project.id}/${mod.key}`}>

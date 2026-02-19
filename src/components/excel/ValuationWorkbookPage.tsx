@@ -11,7 +11,7 @@ import { saveValuationSheet, getValuationSheet } from '@/app/actions/valuation';
 import { readAllSheets, captureSelection } from '@/lib/fortune-api';
 import { rcToA1 } from '@/lib/excel-coords';
 import { ensureWorkbookData } from '@/lib/fortune-template';
-import type { MethodKey } from '@/types';
+import type { ValuationMethodKey } from '@/types';
 
 const Workbook = dynamic(
     () => import('@fortune-sheet/react').then((mod) => mod.Workbook),
@@ -39,7 +39,7 @@ const DEFAULT_WORKBOOK_DATA = [
 
 interface Props {
     projectId: string;
-    method: MethodKey;
+    method: ValuationMethodKey;
 }
 
 declare global {
@@ -48,9 +48,21 @@ declare global {
     }
 }
 
+/**
+ * 通用估价工作簿页面组件
+ * 此组件为 9 种估价方法提供完全物理隔离的数据存储
+ * 
+ * 隔离机制：
+ * 1. Store 层：使用 updateSheetData(projectId, method, data) 按 method key 隔离写入
+ * 2. 数据读取：从 project.sheetData[method] 精准读取，各方法互不干扰
+ * 3. 服务器层：文件名格式 {projectId}_{method}.json，物理隔离
+ * 4. DOM 层：container ID 包含 method 名，Workbook key 包含 method
+ * 5. 缓存层：Fetch 请求按 [projectId, method] 双重隔离
+ */
 export function ValuationWorkbookPage({ projectId, method }: Props) {
     const project = useSmartValStore((state) => state.projects.find((p) => p.id === projectId));
-    const updateSalesSheetData = useSmartValStore((state) => state.updateSalesSheetData);
+    // 统一使用隔离存储 action，彻底弃用 updateSalesSheetData
+    const updateSheetData = useSmartValStore((state) => state.updateSheetData);
     const extractMetricsFromData = useSmartValStore((state) => state.extractMetricsFromData);
 
     const workbookRef = useRef<any>(null);
@@ -61,40 +73,48 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
     const [currentSelection, setCurrentSelection] = useState<{ sheetId: string; sheetName: string; r: number; c: number } | null>(null);
     const [isMounted, setIsMounted] = useState(false);
     const [serverSheet, setServerSheet] = useState<any[] | null>(null);
-    const [workbookKey, setWorkbookKey] = useState(0); // Force Re-render Key
+    // workbookKey 包含 method 确保切换方法时强制重新挂载
+    const [workbookKey, setWorkbookKey] = useState(0);
     const [debugMsg, setDebugMsg] = useState<string>("");
 
     const isLoadingProject = !project;
 
     const [isLoadingSheet, setIsLoadingSheet] = useState(true);
 
-    // Data Preparation
+    // ============================================================
+    // 数据准备 — 完全按 method 隔离读取
+    // ============================================================
     const safeData = useMemo(() => {
-        // Priority: Server Data > Store Data (only if sales-comp) > Default
-        let storeData = null;
-        if (method === 'sales-comp') {
-            storeData = project?.salesSheetData;
-        }
-
-        const raw = ensureWorkbookData(serverSheet ?? storeData);
-        // FORCE ONE SHEET ONLY (User Request: Delete 2-60)
+        // 优先级：服务器数据 > Store 隔离 Map 中的数据 > 默认空表
+        // 关键：从 project.sheetData[method] 精准读取，不再读 salesSheetData
+        const storedData = project?.sheetData?.[method] ?? null;
+        const raw = ensureWorkbookData(serverSheet ?? storedData);
+        // 限制单 Sheet
         return raw.slice(0, 1);
-    }, [serverSheet, project?.salesSheetData, method]);
+    }, [serverSheet, project?.sheetData, method]);
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
-    // 5. Hydrate from Server on Mount
+    // ============================================================
+    // 当 method 或 projectId 变化时，重置所有状态
+    // ============================================================
     const hasFetchedRef = useRef(false);
 
     useEffect(() => {
-        // Reset fetch state when method/project changes
+        // 重置 fetch 状态
         hasFetchedRef.current = false;
         setServerSheet(null);
         setIsLoadingSheet(true);
+        setDebugMsg("");
+        setCurrentSelection(null);
+        latestSheetDataRef.current = null;
     }, [projectId, method]);
 
+    // ============================================================
+    // 从服务器加载数据 — 按 [projectId, method] 双重隔离
+    // ============================================================
     useEffect(() => {
         if (hasFetchedRef.current) return;
         hasFetchedRef.current = true;
@@ -104,26 +124,26 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         async function fetchSheetData() {
             if (!projectId) return;
             try {
-                console.log(`[Client] Fetching sheet data for project ${projectId} (${method})...`);
+                console.log(`[ValuationWorkbook] 正在加载 project=${projectId}, method=${method} 的数据...`);
+                // 服务器层隔离：按 method 精准请求
                 const response = await getValuationSheet(projectId, method);
 
                 if (active) {
                     if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-                        console.log("[Client] Restoring data from server:", response.data);
+                        console.log(`[ValuationWorkbook] 成功恢复 ${method} 的服务器数据`);
 
-                        if (method === 'sales-comp') {
-                            updateSalesSheetData(projectId, response.data);
-                        }
+                        // Store 层隔离：写入 sheetData[method]
+                        updateSheetData(projectId, method, response.data);
 
-                        // Direct Render Update & Force Re-mount
+                        // 渲染更新 & 强制重新挂载
                         setServerSheet(response.data);
                         setWorkbookKey(k => k + 1);
                     } else {
-                        console.log("[Client] No valid data found on server.");
+                        console.log(`[ValuationWorkbook] ${method} 无服务器数据，使用默认空表`);
                     }
                 }
             } catch (error) {
-                console.error("[Client] Failed to load sheet data:", error);
+                console.error(`[ValuationWorkbook] 加载 ${method} 数据失败:`, error);
             } finally {
                 if (active) setIsLoadingSheet(false);
             }
@@ -131,11 +151,26 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
 
         fetchSheetData();
 
-        return () => { active = false; };
-    }, [projectId, method, updateSalesSheetData]);
+        // 清理：强制销毁 Luckysheet 实例，防止内存级数据串盘
+        return () => {
+            active = false;
+            // @ts-ignore
+            if (typeof window !== 'undefined' && window.luckysheet && window.luckysheet.destroy) {
+                try {
+                    // @ts-ignore
+                    window.luckysheet.destroy();
+                    console.log(`[ValuationWorkbook] 已销毁 ${method} 的 Luckysheet 实例`);
+                } catch (e) {
+                    console.warn(`[ValuationWorkbook] 销毁 Luckysheet 实例时出错:`, e);
+                }
+            }
+        };
+    }, [projectId, method, updateSheetData]);
 
 
-    // Scroll Handlers
+    // ============================================================
+    // 滚动控制
+    // ============================================================
     const handleScroll = useCallback((direction: 'left' | 'right') => {
         if (!gridContainerRef.current) return;
         const scrollbar = gridContainerRef.current.querySelector('.fortune-scrollbar-x')
@@ -148,6 +183,9 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         }
     }, []);
 
+    // ============================================================
+    // 选择捕获
+    // ============================================================
     const handleCaptureSelection = useCallback(() => {
         const sel = getCurrentSelection();
         if (sel) {
@@ -159,10 +197,10 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
     }, []);
 
     const getCurrentSelection = useCallback(() => {
-        // Capture from simple state if available (from onSelect)
+        // 优先使用已捕获的选择状态
         if (currentSelection) return currentSelection;
 
-        // Fallback to reading workbook ref
+        // 回退到读取 workbook ref
         if (!workbookRef.current) return null;
         let data = latestSheetDataRef.current;
         const apiData = readAllSheets(workbookRef.current);
@@ -170,7 +208,7 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         return captureSelection(workbookRef.current, data);
     }, [currentSelection]);
 
-    // Handle standard FortuneSheet onSelect event
+    // FortuneSheet onSelect 事件处理
     const handleSheetSelect = useCallback((selection: any) => {
         if (selection) {
             const r = selection.r ?? selection.row?.[0];
@@ -181,16 +219,19 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         }
     }, []);
 
+    // ============================================================
+    // 保存逻辑 — 全链路按 method 隔离
+    // ============================================================
     const handleSaveAndExtract = useCallback(async () => {
-        console.log("SAVE CLICKED");
+        console.log(`[${method}] 保存按钮点击`);
         if (!project) return;
 
-        // Force Sync
+        // 强制同步公式计算
         try {
             if (workbookRef.current?.calculateFormula) workbookRef.current.calculateFormula();
         } catch { }
 
-        // 1. Get Data (Global Source of Truth)
+        // 1. 获取数据（全局数据源）
         let rawData: any[] | null = null;
 
         // @ts-ignore
@@ -211,20 +252,19 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             rawData = readAllSheets(workbookRef.current);
         }
 
-        // Fallback to latest ref if API fails
+        // 回退到最新 ref
         if ((!rawData || !Array.isArray(rawData) || rawData.length === 0) && latestSheetDataRef.current) {
             rawData = latestSheetDataRef.current;
         }
 
         if (!rawData || !Array.isArray(rawData) || rawData.length === 0) {
-            toast.error('Failed to read data. Grid API not ready.');
+            toast.error('读取数据失败，表格 API 未就绪');
             return;
         }
 
-        // 2. Sanitize (Robust Cleaning Strategy)
+        // 2. 清洗数据
         let cleanData: any[] = [];
         try {
-            // Manual clean
             cleanData = (rawData || []).map((sheet: any) => {
                 let finalCelldata: any[] = sheet.celldata;
 
@@ -261,48 +301,51 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             const json = JSON.stringify(cleanData);
             const sizeMB = new Blob([json]).size / (1024 * 1024);
             if (sizeMB > 4.5) {
-                toast.error(`Data too large (${sizeMB.toFixed(2)}MB). Limit is ~5MB.`);
+                toast.error(`数据过大 (${sizeMB.toFixed(2)}MB)，限制约 5MB`);
                 setDebugMsg(`Data > 5MB (${sizeMB.toFixed(2)})`);
                 return;
             }
         } catch (e) {
-            console.error("Sanitization Failed:", e);
-            toast.error("Save Failed: Data corruption.");
+            console.error("数据清洗失败:", e);
+            toast.error("保存失败：数据损坏");
             return;
         }
 
-        // 3. Update Store & Server
+        // 3. Store & 服务器 — 全部按 method 隔离
         try {
             const toSave = cleanData;
 
-            if (method === 'sales-comp') {
-                updateSalesSheetData(projectId, toSave);
-            }
+            // Store 层隔离：写入 sheetData[method]，绝不写入 salesSheetData
+            updateSheetData(projectId, method, toSave);
             extractMetricsFromData(projectId, toSave);
             setServerSheet(toSave);
 
+            // 服务器层隔离：文件名 {projectId}_{method}.json
             const saveResult = await saveValuationSheet(projectId, method, toSave);
 
             if (!saveResult.success) {
-                throw new Error("Server write failed: " + saveResult.error);
+                throw new Error("服务器写入失败: " + saveResult.error);
             }
 
-            toast.success('Saved Successfully to Database');
+            toast.success(`${method} 数据已保存至数据库`);
             setDebugMsg("Saved (DB)");
         } catch (e) {
-            console.error("Write Failed:", e);
+            console.error("写入失败:", e);
             setDebugMsg("Write Failed");
-            toast.error("Save Failed: Could not write to storage.");
+            toast.error("保存失败：无法写入存储");
         }
 
-    }, [projectId, project, method, updateSalesSheetData, extractMetricsFromData]);
+    }, [projectId, project, method, updateSheetData, extractMetricsFromData]);
 
+    // ============================================================
+    // Loading 状态
+    // ============================================================
     if (isLoadingProject || isLoadingSheet) {
         return (
             <div className="flex h-full w-full items-center justify-center bg-gray-50">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
                 <span className="ml-2 text-sm text-gray-500">
-                    {isLoadingProject ? 'Loading Project...' : 'Loading Data...'}
+                    {isLoadingProject ? 'Loading Project...' : `Loading ${method}...`}
                 </span>
             </div>
         );
@@ -314,9 +357,12 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         return <div className="p-8"><Loader2 className="h-4 w-4 animate-spin" /> Init...</div>;
     }
 
+    // DOM 容器 ID 按 method 隔离，确保互不干扰
+    const containerId = `luckysheet-${method}`;
+
     return (
         <div className="flex flex-col h-full w-full max-w-full min-w-0 overflow-hidden bg-white dark:bg-slate-950 border-0 rounded-none shadow-none">
-            {/* Toolbar */}
+            {/* 工具栏 */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-white shrink-0 z-20 min-h-[50px] min-w-0">
                 <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => setFieldManagerOpen(true)}>
@@ -334,9 +380,6 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="text-sm font-semibold text-gray-400 uppercase tracking-wider hidden sm:block mr-4">
-                        {method.replace(/-|_/g, ' ')}
-                    </div>
 
                     {debugMsg && (
                         <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 flex items-center gap-1 font-bold">
@@ -351,13 +394,14 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
                 </div>
             </div>
 
-            <div ref={gridContainerRef} className="flex-1 min-h-0 w-full min-w-0 overflow-hidden relative">
+            {/* 表格容器 — container ID 按 method 隔离 */}
+            <div ref={gridContainerRef} id={containerId} className="flex-1 min-h-0 w-full min-w-0 overflow-hidden relative">
                 <Workbook
-                    key={workbookKey}
+                    key={`${method}-${workbookKey}`}
                     ref={workbookRef}
                     data={safeData}
                     onChange={(data: any) => { latestSheetDataRef.current = data; }}
-                    // @ts-ignore
+                    // @ts-ignore - FortuneSheet onSelect 类型签名不精确
                     onSelect={handleSheetSelect}
                     showToolbar={true}
                     showFormulaBar={true}

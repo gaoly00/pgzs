@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Select,
     SelectContent,
@@ -15,27 +14,36 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Save } from 'lucide-react';
 import Link from 'next/link';
-import { parseNumberInput } from '@/lib/format';
-import { VALUATION_METHODS, type ValuationMethodKey } from '@/types';
-
-const PROPERTY_TYPES = ['住宅', '商业', '办公', '工业', '综合', '其他'];
+import { ProjectValuationType, VALUATION_METHODS_CONFIG, ValuationMethodKey } from '@/types';
 
 export default function NewProjectPage() {
     const router = useRouter();
     const createProject = useSmartValStore((s) => s.createProject);
 
     const [name, setName] = useState('');
-    const [valuationDate, setValuationDate] = useState('');
-    const [propertyType, setPropertyType] = useState('');
-    const [gfaStr, setGfaStr] = useState('');
-    const [address, setAddress] = useState('');
-    const [selectedMethods, setSelectedMethods] = useState<ValuationMethodKey[]>(['sales-comp']);
+    const [projectNumber, setProjectNumber] = useState('');
+    const [projectType, setProjectType] = useState<ProjectValuationType>('real-estate');
+    // Ensure initial state has defaults, or start empty? User said "allow checking which means default state...".
+    // Usually better to have defaults selected.
+    const [selectedMethods, setSelectedMethods] = useState<ValuationMethodKey[]>(
+        VALUATION_METHODS_CONFIG['real-estate'].map(m => m.key)
+    );
+
+    const handleProjectTypeChange = (type: ProjectValuationType) => {
+        setProjectType(type);
+        // Reset methods to defaults for the new type? Or clear? 
+        // "Render ... allow checking". 
+        // Let's reset to defaults for convenience.
+        const defaultMethods = VALUATION_METHODS_CONFIG[type].map(m => m.key);
+        setSelectedMethods(defaultMethods);
+    };
 
     const toggleMethod = (key: ValuationMethodKey) => {
         setSelectedMethods((prev) =>
-            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
         );
     };
 
@@ -45,14 +53,13 @@ export default function NewProjectPage() {
 
         const id = createProject({
             name: name.trim(),
-            valuationDate,
-            propertyType,
-            gfa: parseNumberInput(gfaStr),
-            address: address.trim(),
-            valuationMethods: selectedMethods,
+            projectNumber: projectNumber.trim(),
+            projectType,
+            valuationMethods: selectedMethods // Use selected checkboxes
         });
 
-        router.push(`/projects/${id}`);
+        // Redirect to Basic Info page (Module 1)
+        router.push(`/projects/${id}/basic-info`);
     };
 
     return (
@@ -65,14 +72,14 @@ export default function NewProjectPage() {
                 </Link>
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Create New Project</h1>
-                    <p className="text-muted-foreground text-sm">填写项目基础信息</p>
+                    <p className="text-muted-foreground text-sm">仅需填写核心信息即可快速创建项目</p>
                 </div>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Project Information</CardTitle>
-                    <CardDescription>请填写估价项目的基本信息</CardDescription>
+                    <CardTitle>Project Basics</CardTitle>
+                    <CardDescription>核心识别信息与类型</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-6">
@@ -88,81 +95,54 @@ export default function NewProjectPage() {
                             />
                         </div>
 
-                        {/* Valuation Date */}
+                        {/* Project Number */}
                         <div className="space-y-2">
-                            <Label htmlFor="valuationDate">估价日期</Label>
+                            <Label htmlFor="projectNumber">项目编号</Label>
                             <Input
-                                id="valuationDate"
-                                type="date"
-                                value={valuationDate}
-                                onChange={(e) => setValuationDate(e.target.value)}
+                                id="projectNumber"
+                                placeholder="例如：2024-VJ-001"
+                                value={projectNumber}
+                                onChange={(e) => setProjectNumber(e.target.value)}
                             />
                         </div>
 
-                        {/* Property Type */}
+                        {/* Project Type */}
                         <div className="space-y-2">
-                            <Label htmlFor="propertyType">物业类型</Label>
-                            <Select value={propertyType} onValueChange={setPropertyType}>
-                                <SelectTrigger id="propertyType">
-                                    <SelectValue placeholder="选择物业类型" />
+                            <Label htmlFor="projectType">项目类型 *</Label>
+                            <Select
+                                value={projectType}
+                                onValueChange={(v) => handleProjectTypeChange(v as ProjectValuationType)}
+                            >
+                                <SelectTrigger id="projectType">
+                                    <SelectValue placeholder="选择项目类型" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {PROPERTY_TYPES.map((type) => (
-                                        <SelectItem key={type} value={type}>
-                                            {type}
-                                        </SelectItem>
-                                    ))}
+                                    <SelectItem value="real-estate">房地产项目</SelectItem>
+                                    <SelectItem value="land">土地项目</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
-                        {/* GFA */}
-                        <div className="space-y-2">
-                            <Label htmlFor="gfa">建筑面积 (㎡)</Label>
-                            <Input
-                                id="gfa"
-                                type="number"
-                                step="0.01"
-                                placeholder="例如：120.50"
-                                value={gfaStr}
-                                onChange={(e) => setGfaStr(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Address */}
-                        <div className="space-y-2">
-                            <Label htmlFor="address">地址</Label>
-                            <Input
-                                id="address"
-                                placeholder="例如：北京市朝阳区XX路XX号"
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Valuation Methods */}
-                        <div className="space-y-3">
-                            <Label>估价方法 *</Label>
-                            <p className="text-xs text-muted-foreground">选择该项目需要使用的估价方法，可在项目中随时更改</p>
-                            <div className="grid grid-cols-2 gap-3">
-                                {(Object.entries(VALUATION_METHODS) as [ValuationMethodKey, string][]).map(
-                                    ([key, label]) => (
-                                        <label
-                                            key={key}
-                                            className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent/50 ${selectedMethods.includes(key)
-                                                    ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-950/20'
-                                                    : 'border-border'
-                                                }`}
-                                        >
-                                            <Checkbox
-                                                id={`method-${key}`}
-                                                checked={selectedMethods.includes(key)}
-                                                onCheckedChange={() => toggleMethod(key)}
-                                            />
-                                            <span className="text-sm font-medium">{label}</span>
-                                        </label>
-                                    ),
-                                )}
+                        {/* Valuation Methods Checkboxes (Conditional Rendering) */}
+                        <div className="space-y-3 pt-2">
+                            <Label>适用估价方法</Label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border rounded-md bg-slate-50 dark:bg-slate-900/50">
+                                {VALUATION_METHODS_CONFIG[projectType].map((m) => (
+                                    <label
+                                        key={m.key}
+                                        className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-colors ${selectedMethods.includes(m.key)
+                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200'
+                                            : 'hover:bg-slate-200 dark:hover:bg-slate-800'
+                                            }`}
+                                    >
+                                        <Checkbox
+                                            checked={selectedMethods.includes(m.key)}
+                                            onCheckedChange={() => toggleMethod(m.key)}
+                                            className="data-[state=checked]:bg-blue-600"
+                                        />
+                                        <span className="text-sm font-medium">{m.label}</span>
+                                    </label>
+                                ))}
                             </div>
                         </div>
 
@@ -176,7 +156,7 @@ export default function NewProjectPage() {
                             <Button
                                 type="submit"
                                 className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-                                disabled={!name.trim()}
+                                disabled={!name.trim() || selectedMethods.length === 0}
                             >
                                 <Save className="mr-2 h-4 w-4" />
                                 Create Project

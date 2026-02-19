@@ -1,0 +1,41 @@
+{
+  "projectId": "ba0ba42e-3b25-4d5b-ae1d-de2635c5197d",
+  "sheetType": "benchmark-land-price",
+  "version": 2,
+  "data": [
+    {
+      "name": "Sales Comparison",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "config": {},
+      "celldata": [
+        {
+          "r": 0,
+          "c": 0,
+          "v": {
+            "m": "这是基准地价",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "这是基准地价"
+          }
+        },
+        {
+          "r": 1,
+          "c": 0,
+          "v": {
+            "m": "Benchmark-land-price",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "Benchmark-land-price"
+          }
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-02-19T10:49:22.353Z"
+}

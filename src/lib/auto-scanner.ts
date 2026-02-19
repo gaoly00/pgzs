@@ -127,7 +127,7 @@ export function scanForSuggestions(
         normalizedExcludeKeywords: string[];
     }> = STANDARD_FIELDS.map((field) => ({
         field,
-        normalizedKeywords: field.keywords.map(normalizeText),
+        normalizedKeywords: (field.keywords ?? []).map(normalizeText),
         normalizedExcludeKeywords: (field.excludeKeywords ?? []).map(normalizeText),
     }));
 
@@ -220,13 +220,13 @@ export function scanForSuggestions(
                     if (normalizedLabel === nk) {
                         base = 1.0;
                         matchType = 'exact';
-                        matchedKeyword = field.keywords[ki];
+                        matchedKeyword = (field.keywords ?? [])[ki];
                         break;
                     } else if (normalizedLabel.includes(nk)) {
                         if (0.8 > base) {
                             base = 0.8;
                             matchType = 'partial';
-                            matchedKeyword = field.keywords[ki];
+                            matchedKeyword = (field.keywords ?? [])[ki];
                         }
                     }
                 }

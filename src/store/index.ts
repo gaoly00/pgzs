@@ -25,7 +25,7 @@ interface SmartValState {
     // ---- Actions ----
     createProject: (data: CreateProjectInput) => string;
     deleteProject: (id: string) => void;
-    updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'valuationDate' | 'propertyType' | 'gfa' | 'address'>>) => void;
+    updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'projectNumber' | 'projectType' | 'valuationDate' | 'propertyType' | 'gfa' | 'address'>>) => void;
     updateValuationMethods: (projectId: string, methods: ValuationMethodKey[]) => void;
 
     // Sales Comp (Legacy — kept for backward compat)
@@ -36,7 +36,8 @@ interface SmartValState {
     // Sales Comp (FortuneSheet — Field Manager & Hybrid Storage)
     bindAnchor: (projectId: string, fieldKey: string, anchor: SalesAnchor) => void;
     unbindAnchor: (projectId: string, fieldKey: string) => void;
-    updateSalesSheetData: (projectId: string, data: any) => void; // Updates blob only
+    updateSalesSheetData: (projectId: string, data: any) => void; // Updates blob only (Legacy)
+    updateSheetData: (projectId: string, sheetType: string, data: any) => void; // New: Isolated updates
 
     // Custom Fields
     addCustomField: (projectId: string, field: CustomFieldDef) => void;
@@ -116,7 +117,13 @@ export const useSmartValStore = create<SmartValState>()(
                 const now = new Date().toISOString();
                 const newProject: Project = {
                     id,
-                    ...data,
+                    name: data.name,
+                    projectNumber: data.projectNumber,
+                    projectType: data.projectType ?? 'real-estate',
+                    valuationDate: data.valuationDate ?? '',
+                    propertyType: data.propertyType ?? '',
+                    gfa: data.gfa ?? null,
+                    address: data.address ?? '',
                     valuationMethods: data.valuationMethods ?? ['sales-comp'],
                     salesCompCases: createDefaultSalesCompCases(),
                     costItems: createDefaultCostItems(),
@@ -127,6 +134,7 @@ export const useSmartValStore = create<SmartValState>()(
                     },
                     // FortuneSheet fields
                     salesSheetData: null,
+                    sheetData: {}, // New: Init isolation map
                     salesAnchors: {},
                     salesResult: { unitPrice: null, totalValue: null },
                     extractedMetrics: {},
@@ -240,8 +248,17 @@ export const useSmartValStore = create<SmartValState>()(
             updateSalesSheetData: (projectId, data) => {
                 set((state) => ({
                     projects: updateProjectInList(state.projects, projectId, (p) =>
-                        setDirty({ ...p, salesSheetData: data }),
+                        setDirty({ ...p, salesSheetData: data }), // Keep legacy for sales-comp
                     ),
+                }));
+            },
+
+            updateSheetData: (projectId, sheetType, data) => {
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => {
+                        const newSheets = { ...(p.sheetData || {}), [sheetType]: data };
+                        return setDirty({ ...p, sheetData: newSheets });
+                    }),
                 }));
             },
 

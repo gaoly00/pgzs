@@ -1,0 +1,41 @@
+{
+  "projectId": "ba0ba42e-3b25-4d5b-ae1d-de2635c5197d",
+  "sheetType": "land-income",
+  "version": 1,
+  "data": [
+    {
+      "name": "Sales Comparison",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "config": {},
+      "celldata": [
+        {
+          "r": 0,
+          "c": 0,
+          "v": {
+            "m": "收益还原法",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "收益还原法"
+          }
+        },
+        {
+          "r": 1,
+          "c": 0,
+          "v": {
+            "m": "土地",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "土地"
+          }
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-02-19T13:39:54.214Z"
+}

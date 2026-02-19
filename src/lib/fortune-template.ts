@@ -15,7 +15,7 @@ export function ensureWorkbookData(input?: any): any[] {
         return {
             ...sheet,
             id: sheet.id || uuidv4(),
-            name: sheet.name || `Sheet${index + 1}`,
+            name: (sheet.name === 'Sales Comparison') ? 'Sheet1' : (sheet.name || `Sheet${index + 1}`),
             // Vital: row/column must be numbers. If missing, default them.
             // "row or column cannot be null or undefined" crash fix.
             row: (typeof sheet.row === 'number' && sheet.row > 0) ? sheet.row : DEFAULT_ROW_COUNT,
@@ -34,7 +34,7 @@ export function ensureWorkbookData(input?: any): any[] {
 function createDefaultWorkbook() {
     return [{
         id: uuidv4(),
-        name: "Sales Comparison",
+        name: "Sheet1",
         row: DEFAULT_ROW_COUNT,
         column: DEFAULT_COL_COUNT,
         celldata: [],

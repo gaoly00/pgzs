@@ -24,6 +24,7 @@ interface FieldManagerDrawerProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     projectId: string;
+    method?: string; // 当前估价方法标识（可选，供未来扩展使用）
     currentSelection: { sheetId: string; sheetName: string; r: number; c: number } | null;
     onCaptureSelection: () => void;
     getCurrentSelection: () => { sheetId: string; sheetName: string; r: number; c: number } | null;

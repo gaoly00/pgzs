@@ -6,6 +6,8 @@ export interface StandardFieldDef {
     label: string;
     category: FieldCategory;
     valueType: FieldValueType;
+    keywords?: string[];       // 用于 auto-scanner 关键词匹配
+    excludeKeywords?: string[]; // 用于 auto-scanner 排除匹配
 }
 
 export const STANDARD_FIELDS: StandardFieldDef[] = [

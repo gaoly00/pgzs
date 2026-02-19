@@ -1,0 +1,41 @@
+{
+  "projectId": "ba0ba42e-3b25-4d5b-ae1d-de2635c5197d",
+  "sheetType": "cost-approach",
+  "version": 1,
+  "data": [
+    {
+      "name": "Sales Comparison",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "config": {},
+      "celldata": [
+        {
+          "r": 0,
+          "c": 0,
+          "v": {
+            "m": "成本法",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "成本法"
+          }
+        },
+        {
+          "r": 1,
+          "c": 0,
+          "v": {
+            "m": "房地产",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "房地产"
+          }
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-02-19T13:42:18.916Z"
+}

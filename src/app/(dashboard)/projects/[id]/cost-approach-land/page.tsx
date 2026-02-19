@@ -4,9 +4,10 @@ import { use } from 'react';
 import { ValuationWorkbookPage } from '@/components/excel/ValuationWorkbookPage';
 
 /**
- * 比较法页面 — 统一使用 ValuationWorkbookPage，data 隔离到 sheetData['sales-comp']
+ * 成本逼近法页面 — 统一使用 ValuationWorkbookPage
+ * data 隔离到 sheetData['cost-approach-land']
  */
-export default function SalesCompPage({
+export default function CostApproximationLandPage({
     params,
 }: {
     params: Promise<{ id: string }>;
@@ -15,7 +16,7 @@ export default function SalesCompPage({
     return (
         <div className="flex flex-col h-[calc(100dvh-56px)] w-full max-w-full min-w-0 overflow-hidden">
             <div className="flex-1 min-h-0 w-full min-w-0 overflow-hidden">
-                <ValuationWorkbookPage projectId={id} method="sales-comp" />
+                <ValuationWorkbookPage projectId={id} method="cost-approach-land" />
             </div>
         </div>
     );
