@@ -4,10 +4,13 @@ import React, { useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic';
 import { useSmartValStore } from '@/store';
 import { Button } from '@/components/ui/button';
-import { Save, TableProperties, Loader2 } from 'lucide-react';
+import { Save, TableProperties, Loader2, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { FieldManagerDrawer } from './FieldManagerDrawer';
 import { toast } from 'sonner';
-import { saveValuationSheet } from '@/app/actions/valuation';
+import { saveValuationSheet, getValuationSheet } from '@/app/actions/valuation';
+import { readAllSheets, captureSelection } from '@/lib/fortune-api';
+import { rcToA1 } from '@/lib/excel-coords';
+import { ensureWorkbookData } from '@/lib/fortune-template';
 import type { MethodKey } from '@/types';
 
 const Workbook = dynamic(
@@ -27,7 +30,7 @@ const DEFAULT_WORKBOOK_DATA = [
         name: 'Sheet1',
         celldata: [],
         order: 0,
-        row: 20, // Reduced from 50 per user request
+        row: 20,
         column: 20,
         config: {},
         status: 1,
@@ -45,195 +48,334 @@ declare global {
     }
 }
 
-// Keep Sanitization - It is essential for LocalStorage reliability
-const sanitizeSheetData = (sheets: any[]) => {
-    if (!Array.isArray(sheets)) return [];
-
-    return sheets.map((sheet) => {
-        // Check if we have dense data populated
-        const hasDenseData = Array.isArray(sheet.data) && sheet.data.length > 0;
-
-        return {
-            name: sheet.name,
-            index: sheet.index,
-            order: sheet.order,
-            status: sheet.status,
-            row: sheet.row,
-            column: sheet.column,
-            config: sheet.config || {},
-
-            // CRITICAL FIX: If dense 'data' is present, we must NOT provide 'celldata' (sparse).
-            // FortuneSheet/Luckysheet prioritizes 'celldata' if present (even if empty []),
-            // causing the sheet to render partially blank on reload.
-            celldata: hasDenseData ? undefined : (sheet.celldata || []),
-
-            data: sheet.data || [],
-            calcChain: sheet.calcChain || [],
-            frozen: sheet.frozen || {},
-            zoomRatio: sheet.zoomRatio || 1,
-            images: sheet.images || null,
-            hyperlinks: sheet.hyperlinks || null,
-            filter: sheet.filter || null,
-            filter_select: sheet.filter_select || null,
-            luckysheet_conditionformat_save: sheet.luckysheet_conditionformat_save || [],
-            luckysheet_alternateformat_save: sheet.luckysheet_alternateformat_save || [],
-        };
-    });
-};
-
 export function ValuationWorkbookPage({ projectId, method }: Props) {
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const [currentSelection, setCurrentSelection] = useState<{ r: number; c: number; sheetId: string } | null>(null);
+    const project = useSmartValStore((state) => state.projects.find((p) => p.id === projectId));
+    const updateSalesSheetData = useSmartValStore((state) => state.updateSalesSheetData);
+    const extractMetricsFromData = useSmartValStore((state) => state.extractMetricsFromData);
 
-    // 1. Project Loading Guard
-    const project = useSmartValStore((s) => s.projects.find((p) => p.id === projectId));
-    const valuationState = project?.valuation?.[method];
-    const saveWorkbook = useSmartValStore((s) => s.saveWorkbook || s.updateValuationData);
-    const extractValuationMetrics = useSmartValStore((s) => s.extractValuationMetrics);
+    const workbookRef = useRef<any>(null);
+    const gridContainerRef = useRef<HTMLDivElement>(null);
+    const latestSheetDataRef = useRef<any[] | null>(null);
+
+    const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
+    const [currentSelection, setCurrentSelection] = useState<{ sheetId: string; sheetName: string; r: number; c: number } | null>(null);
+    const [isMounted, setIsMounted] = useState(false);
+    const [serverSheet, setServerSheet] = useState<any[] | null>(null);
+    const [workbookKey, setWorkbookKey] = useState(0); // Force Re-render Key
+    const [debugMsg, setDebugMsg] = useState<string>("");
 
     const isLoadingProject = !project;
 
-    // 2. Data Preparation
-    const storeData = valuationState?.workbookData;
-    const isLoaded = Array.isArray(storeData) && storeData.length > 0;
+    const [isLoadingSheet, setIsLoadingSheet] = useState(true);
 
-    const workbookData = useMemo(() => {
-        // Force single sheet per user request ("delete 2-60 sheet")
-        if (isLoaded) return storeData.slice(0, 1);
-        return DEFAULT_WORKBOOK_DATA;
-    }, [storeData, isLoaded]);
+    // Data Preparation
+    const safeData = useMemo(() => {
+        // Priority: Server Data > Store Data (only if sales-comp) > Default
+        let storeData = null;
+        if (method === 'sales-comp') {
+            storeData = project?.salesSheetData;
+        }
 
-    // key strategy: Only remount when we switch from "Default" to "Loaded" data state.
-    const workbookKey = useMemo(() => {
-        return `${method}-${isLoaded ? 'loaded' : 'default'}`;
-    }, [method, isLoaded]);
+        const raw = ensureWorkbookData(serverSheet ?? storeData);
+        // FORCE ONE SHEET ONLY (User Request: Delete 2-60)
+        return raw.slice(0, 1);
+    }, [serverSheet, project?.salesSheetData, method]);
 
-    const workbookRef = useRef<any>(null);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
-    // --- Handlers ---
+    // 5. Hydrate from Server on Mount
+    const hasFetchedRef = useRef(false);
 
+    useEffect(() => {
+        // Reset fetch state when method/project changes
+        hasFetchedRef.current = false;
+        setServerSheet(null);
+        setIsLoadingSheet(true);
+    }, [projectId, method]);
+
+    useEffect(() => {
+        if (hasFetchedRef.current) return;
+        hasFetchedRef.current = true;
+
+        let active = true;
+
+        async function fetchSheetData() {
+            if (!projectId) return;
+            try {
+                console.log(`[Client] Fetching sheet data for project ${projectId} (${method})...`);
+                const response = await getValuationSheet(projectId, method);
+
+                if (active) {
+                    if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+                        console.log("[Client] Restoring data from server:", response.data);
+
+                        if (method === 'sales-comp') {
+                            updateSalesSheetData(projectId, response.data);
+                        }
+
+                        // Direct Render Update & Force Re-mount
+                        setServerSheet(response.data);
+                        setWorkbookKey(k => k + 1);
+                    } else {
+                        console.log("[Client] No valid data found on server.");
+                    }
+                }
+            } catch (error) {
+                console.error("[Client] Failed to load sheet data:", error);
+            } finally {
+                if (active) setIsLoadingSheet(false);
+            }
+        }
+
+        fetchSheetData();
+
+        return () => { active = false; };
+    }, [projectId, method, updateSalesSheetData]);
+
+
+    // Scroll Handlers
+    const handleScroll = useCallback((direction: 'left' | 'right') => {
+        if (!gridContainerRef.current) return;
+        const scrollbar = gridContainerRef.current.querySelector('.fortune-scrollbar-x')
+            || gridContainerRef.current.querySelector('.luckysheet-scrollbar-x')
+            || gridContainerRef.current.querySelector('.fortune-sheet-scrollbar-x');
+
+        if (scrollbar) {
+            const amount = 300;
+            scrollbar.scrollLeft += direction === 'right' ? amount : -amount;
+        }
+    }, []);
+
+    const handleCaptureSelection = useCallback(() => {
+        const sel = getCurrentSelection();
+        if (sel) {
+            setCurrentSelection(sel);
+            toast.success(`Captured: ${sel.sheetName}!${rcToA1(sel.r, sel.c)}`);
+        } else {
+            toast.error('No valid cell selected.');
+        }
+    }, []);
+
+    const getCurrentSelection = useCallback(() => {
+        // Capture from simple state if available (from onSelect)
+        if (currentSelection) return currentSelection;
+
+        // Fallback to reading workbook ref
+        if (!workbookRef.current) return null;
+        let data = latestSheetDataRef.current;
+        const apiData = readAllSheets(workbookRef.current);
+        if (apiData) data = apiData;
+        return captureSelection(workbookRef.current, data);
+    }, [currentSelection]);
+
+    // Handle standard FortuneSheet onSelect event
     const handleSheetSelect = useCallback((selection: any) => {
         if (selection) {
             const r = selection.r ?? selection.row?.[0];
             const c = selection.c ?? selection.column?.[0];
             if (typeof r === 'number' && typeof c === 'number') {
-                setCurrentSelection({ r, c, sheetId: '0' });
+                setCurrentSelection({ r, c, sheetId: '0', sheetName: 'Sheet1' });
             }
         }
     }, []);
 
-    const getSelectionFromLuckysheet = useCallback(() => {
-        if (currentSelection) return currentSelection;
-        if (typeof window === 'undefined') return null;
-        const ls = window.luckysheet;
-        return ls?.luckysheet_select_save?.[0] ?
-            { r: ls.luckysheet_select_save[0].row_focus, c: ls.luckysheet_select_save[0].column_focus, sheetId: '0' } : null;
-    }, [currentSelection]);
+    const handleSaveAndExtract = useCallback(async () => {
+        console.log("SAVE CLICKED");
+        if (!project) return;
 
-    const handleSave = useCallback(async () => {
+        // Force Sync
         try {
-            // 1. DIRECT FETCH: Use the global luckysheet object as the single source of truth.
-            // This bypasses any React state lag or incomplete event data.
-            let rawData = null;
+            if (workbookRef.current?.calculateFormula) workbookRef.current.calculateFormula();
+        } catch { }
 
-            const globalLs = window.luckysheet;
-            if (globalLs && typeof globalLs.getluckysheetfile === 'function') {
+        // 1. Get Data (Global Source of Truth)
+        let rawData: any[] | null = null;
+
+        // @ts-ignore
+        const globalLs = typeof window !== 'undefined' ? window.luckysheet : null;
+
+        if (globalLs) {
+            // @ts-ignore
+            if (globalLs.getAllSheets) {
+                // @ts-ignore
+                rawData = globalLs.getAllSheets();
+            } else if (globalLs.getluckysheetfile) {
+                // @ts-ignore
                 rawData = globalLs.getluckysheetfile();
-            } else if (workbookRef.current?.getAllSheets) {
-                // Fallback only if global is missing (rare)
-                rawData = workbookRef.current.getAllSheets();
             }
+        }
 
-            if (!Array.isArray(rawData) || rawData.length === 0) {
-                throw new Error("Could not retrieve workbook data from global instance.");
+        if ((!rawData || !Array.isArray(rawData) || rawData.length === 0) && workbookRef.current) {
+            rawData = readAllSheets(workbookRef.current);
+        }
+
+        // Fallback to latest ref if API fails
+        if ((!rawData || !Array.isArray(rawData) || rawData.length === 0) && latestSheetDataRef.current) {
+            rawData = latestSheetDataRef.current;
+        }
+
+        if (!rawData || !Array.isArray(rawData) || rawData.length === 0) {
+            toast.error('Failed to read data. Grid API not ready.');
+            return;
+        }
+
+        // 2. Sanitize (Robust Cleaning Strategy)
+        let cleanData: any[] = [];
+        try {
+            // Manual clean
+            cleanData = (rawData || []).map((sheet: any) => {
+                let finalCelldata: any[] = sheet.celldata;
+
+                if (!finalCelldata || (typeof finalCelldata === 'string' && finalCelldata === "$undefined") || !Array.isArray(finalCelldata)) {
+                    finalCelldata = [];
+                    if (sheet.data && Array.isArray(sheet.data)) {
+                        for (let r = 0; r < sheet.data.length; r++) {
+                            const row = sheet.data[r];
+                            if (!row) continue;
+                            for (let c = 0; c < row.length; c++) {
+                                const cell = row[c];
+                                if (cell !== null && cell !== undefined) {
+                                    finalCelldata.push({ r, c, v: cell });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (Array.isArray(finalCelldata)) {
+                    finalCelldata = finalCelldata.filter(cell => cell && typeof cell === 'object');
+                }
+
+                return {
+                    name: String(sheet.name || "Sheet1"),
+                    index: (sheet.index === "$undefined" || sheet.index == null) ? 0 : Number(sheet.index),
+                    status: (sheet.status === "$undefined" || sheet.status == null) ? 0 : Number(sheet.status),
+                    order: (sheet.order === "$undefined" || sheet.order == null) ? 0 : Number(sheet.order),
+                    config: sheet.config || {},
+                    celldata: finalCelldata
+                };
+            });
+
+            const json = JSON.stringify(cleanData);
+            const sizeMB = new Blob([json]).size / (1024 * 1024);
+            if (sizeMB > 4.5) {
+                toast.error(`Data too large (${sizeMB.toFixed(2)}MB). Limit is ~5MB.`);
+                setDebugMsg(`Data > 5MB (${sizeMB.toFixed(2)})`);
+                return;
             }
+        } catch (e) {
+            console.error("Sanitization Failed:", e);
+            toast.error("Save Failed: Data corruption.");
+            return;
+        }
 
-            // 2. Sanitize (Essential)
-            // JSON.stringify handles this but sanitizeSheetData cleans circular refs explicitly
-            const cleanData = sanitizeSheetData(rawData);
+        // 3. Update Store & Server
+        try {
+            const toSave = cleanData;
 
-            // 3. Persist to Server (Real Database/File Write)
-            const saveResult = await saveValuationSheet(projectId, method, cleanData);
+            if (method === 'sales-comp') {
+                updateSalesSheetData(projectId, toSave);
+            }
+            extractMetricsFromData(projectId, toSave);
+            setServerSheet(toSave);
+
+            const saveResult = await saveValuationSheet(projectId, method, toSave);
 
             if (!saveResult.success) {
                 throw new Error("Server write failed: " + saveResult.error);
             }
 
-            // 4. Update Store (Optimistic UI)
-            saveWorkbook(projectId, method, cleanData);
-
-            // 5. Extract
-            extractValuationMetrics(projectId, method, cleanData);
-
-            toast.success('Saved & Extracted Successfully');
-            console.log(`[SmartVal] Successfully saved to DB: ${cleanData.length} sheets.`);
-
-        } catch (e: any) {
-            console.error("Save Failure:", e);
-            toast.error(`Save Failed: ${e.message || "Unknown error"}`);
+            toast.success('Saved Successfully to Database');
+            setDebugMsg("Saved (DB)");
+        } catch (e) {
+            console.error("Write Failed:", e);
+            setDebugMsg("Write Failed");
+            toast.error("Save Failed: Could not write to storage.");
         }
-    }, [projectId, method, saveWorkbook, extractValuationMetrics]);
 
-    if (isLoadingProject) {
+    }, [projectId, project, method, updateSalesSheetData, extractMetricsFromData]);
+
+    if (isLoadingProject || isLoadingSheet) {
         return (
             <div className="flex h-full w-full items-center justify-center bg-gray-50">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                <span className="ml-2 text-sm text-gray-500">Loading Project...</span>
+                <span className="ml-2 text-sm text-gray-500">
+                    {isLoadingProject ? 'Loading Project...' : 'Loading Data...'}
+                </span>
             </div>
         );
     }
 
+    if (!isMounted) return <div className="p-8 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading...</div>;
+
+    if (!safeData || !safeData[0]) {
+        return <div className="p-8"><Loader2 className="h-4 w-4 animate-spin" /> Init...</div>;
+    }
+
     return (
-        <div className="flex flex-col h-full w-full max-w-full overflow-hidden">
+        <div className="flex flex-col h-full w-full max-w-full min-w-0 overflow-hidden bg-white dark:bg-slate-950 border-0 rounded-none shadow-none">
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-white shrink-0 z-20 min-h-[52px]">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-white shrink-0 z-20 min-h-[50px] min-w-0">
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => setDrawerOpen(true)}>
-                        <TableProperties className="w-4 h-4 mr-2" />
-                        Field Manager
+                    <Button variant="outline" size="sm" onClick={() => setFieldManagerOpen(true)}>
+                        <TableProperties className="h-4 w-4 mr-2 text-blue-600" /> Field Manager
                     </Button>
-
-                    <span className="text-xs text-gray-500 font-mono flex items-center gap-2">
-                        <span>{currentSelection ? `R${currentSelection.r + 1}:C${currentSelection.c + 1}` : 'No Select'}</span>
-                        {/* Visual Debugging Indicator */}
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${isLoaded ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {isLoaded ? 'DATA LOADED' : 'NEW SHEET'}
-                        </span>
-                    </span>
-                </div>
-
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">
-                    {method.replace('_', ' ')} Approach
+                    <div className="hidden sm:flex items-center border rounded-md shadow-sm shrink-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleScroll('left')}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="w-[1px] h-4 bg-slate-200" />
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleScroll('right')}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Button onClick={handleSave}>
-                        <Save className="w-4 h-4 mr-2" />
-                        Save & Extract
+                    <div className="text-sm font-semibold text-gray-400 uppercase tracking-wider hidden sm:block mr-4">
+                        {method.replace(/-|_/g, ' ')}
+                    </div>
+
+                    {debugMsg && (
+                        <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 flex items-center gap-1 font-bold">
+                            <AlertTriangle className="w-3 h-3" /> {debugMsg}
+                        </span>
+                    )}
+
+                    <Button variant="default" size="sm" onClick={handleSaveAndExtract} className="h-8 bg-black text-white hover:bg-slate-800">
+                        <Save className="h-3.5 w-3.5 mr-2" />
+                        Save
                     </Button>
                 </div>
             </div>
 
-            <FieldManagerDrawer
-                open={drawerOpen}
-                onOpenChange={setDrawerOpen}
-                projectId={projectId}
-                method={method}
-                currentSelection={currentSelection}
-                getSelection={getSelectionFromLuckysheet}
-                setCurrentSelection={setCurrentSelection}
-            />
-
-            <div className="flex-1 min-h-0 w-full min-w-0 relative bg-gray-50 border-t">
+            <div ref={gridContainerRef} className="flex-1 min-h-0 w-full min-w-0 overflow-hidden relative">
                 <Workbook
                     key={workbookKey}
                     ref={workbookRef}
-                    data={workbookData}
+                    data={safeData}
+                    onChange={(data: any) => { latestSheetDataRef.current = data; }}
                     // @ts-ignore
                     onSelect={handleSheetSelect}
-                    style={{ height: '100%', width: '100%' }}
+                    showToolbar={true}
+                    showFormulaBar={true}
+                    showSheetTabs={true}
+                    allowEdit={true}
                 />
             </div>
+
+            <FieldManagerDrawer
+                open={fieldManagerOpen}
+                onOpenChange={setFieldManagerOpen}
+                projectId={projectId}
+                method={method}
+                currentSelection={currentSelection}
+                onCaptureSelection={handleCaptureSelection}
+                getCurrentSelection={getCurrentSelection}
+                onSaveAndExtract={handleSaveAndExtract}
+            />
         </div>
     );
 }

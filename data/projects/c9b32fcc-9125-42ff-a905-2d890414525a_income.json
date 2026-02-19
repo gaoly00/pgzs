@@ -1,0 +1,41 @@
+{
+  "projectId": "c9b32fcc-9125-42ff-a905-2d890414525a",
+  "sheetType": "income",
+  "version": 3,
+  "data": [
+    {
+      "name": "Sheet1",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "config": {},
+      "celldata": [
+        {
+          "r": 0,
+          "c": 0,
+          "v": {
+            "m": "你好",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "你好"
+          }
+        },
+        {
+          "r": 1,
+          "c": 0,
+          "v": {
+            "m": "这是收益法",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "这是收益法"
+          }
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-02-19T07:28:15.575Z"
+}

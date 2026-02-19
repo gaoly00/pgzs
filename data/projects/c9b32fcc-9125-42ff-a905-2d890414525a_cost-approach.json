@@ -1,0 +1,29 @@
+{
+  "projectId": "c9b32fcc-9125-42ff-a905-2d890414525a",
+  "sheetType": "cost-approach",
+  "version": 1,
+  "data": [
+    {
+      "name": "Sales Comparison",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "config": {},
+      "celldata": [
+        {
+          "r": 0,
+          "c": 0,
+          "v": {
+            "m": "这是成本法",
+            "ct": {
+              "fa": "General",
+              "t": "g"
+            },
+            "v": "这是成本法"
+          }
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-02-19T07:37:35.670Z"
+}
