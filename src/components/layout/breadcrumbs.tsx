@@ -26,6 +26,10 @@ export function Breadcrumbs() {
             crumbs.push({ label: 'Sales Comparison', href: accumulatedPath });
         } else if (seg === 'cost') {
             crumbs.push({ label: 'Cost Approach', href: accumulatedPath });
+        } else if (seg === 'income') {
+            crumbs.push({ label: 'Income Approach', href: accumulatedPath });
+        } else if (seg === 'dev' || seg === 'hypothetical-dev') {
+            crumbs.push({ label: 'Hypothetical Development', href: accumulatedPath });
         } else if (seg === 'conclusion') {
             crumbs.push({ label: 'Conclusion', href: accumulatedPath });
         } else if (seg === 'report') {
@@ -35,8 +39,13 @@ export function Breadcrumbs() {
         } else {
             // Assume it's a project ID — try to look up the name
             const project = projects.find((p) => p.id === seg);
+
+            // If project found, use name. If not found, use the segment itself (capitalized) as fallback
+            // This prevents "Project" from showing up for unknown routes (like 'income' was before fix)
+            const fallbackLabel = seg.charAt(0).toUpperCase() + seg.slice(1);
+
             crumbs.push({
-                label: project ? project.name : 'Project',
+                label: project ? project.name : fallbackLabel,
                 href: accumulatedPath,
             });
         }

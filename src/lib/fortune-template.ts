@@ -20,7 +20,10 @@ export function ensureWorkbookData(input?: any): any[] {
             // "row or column cannot be null or undefined" crash fix.
             row: (typeof sheet.row === 'number' && sheet.row > 0) ? sheet.row : DEFAULT_ROW_COUNT,
             column: (typeof sheet.column === 'number' && sheet.column > 0) ? sheet.column : DEFAULT_COL_COUNT,
-            celldata: Array.isArray(sheet.celldata) ? sheet.celldata : [],
+
+            // Fix: If 'data' is present (dense mode), allow 'celldata' to be undefined so FortuneSheet uses 'data'.
+            // Only force [] if both are missing.
+            celldata: Array.isArray(sheet.celldata) ? sheet.celldata : (Array.isArray(sheet.data) && sheet.data.length > 0 ? undefined : []),
             config: sheet.config || {},
             // Preserve status if present (active sheet), else default first one to 1
             status: sheet.status !== undefined ? sheet.status : (index === 0 ? 1 : 0)
