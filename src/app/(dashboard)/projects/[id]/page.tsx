@@ -31,14 +31,12 @@ import {
     CheckCircle2,
     FileText,
     Building2,
-    Calendar,
     MapPin,
     Ruler,
     Settings2,
     TrendingUp,
     Landmark,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/format';
 import { VALUATION_METHODS, type ValuationMethodKey, VALUATION_METHODS_CONFIG, ProjectValuationType } from '@/types';
 import { toast } from 'sonner';
 
@@ -318,31 +316,7 @@ export default function ProjectDashboardPage({
                                 </DialogContent>
                             </Dialog>
                         </div>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                                <Calendar className="h-3.5 w-3.5" />
-                                {project.valuationDate || '—'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                                <Building2 className="h-3.5 w-3.5" />
-                                {project.propertyType || '—'}
-                            </span>
-                            {project.projectNumber && (
-                                <span className="flex items-center gap-1">
-                                    <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
-                                        {project.projectNumber}
-                                    </span>
-                                </span>
-                            )}
-                            <span className="flex items-center gap-1">
-                                <Ruler className="h-3.5 w-3.5" />
-                                {project.gfa !== null ? `${formatCurrency(project.gfa)} ㎡` : '—'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                                <MapPin className="h-3.5 w-3.5" />
-                                {project.address || '—'}
-                            </span>
-                        </div>
+
                     </div>
                 </div>
                 <div className="flex items-center gap-2">

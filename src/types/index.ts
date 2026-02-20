@@ -6,6 +6,7 @@ export type ProjectValuationType = 'real-estate' | 'land';
 
 /** 估价方法 Key */
 export type ValuationMethodKey =
+  | 'basic-info'           // 基础信息（通用）
   | 'sales-comp'
   | 'cost-approach'
   | 'income-approach'
@@ -15,7 +16,9 @@ export type ValuationMethodKey =
   | 'residual-method'      // 剩余法
   | 'land-sales-comp'      // 市场比较法 (土地)
   | 'land-income'          // 收益还原法
-  | 'cost-approach-land';  // 成本逼近法
+  | 'cost-approach-land'   // 成本逼近法
+  // Common pages
+  | 'conclusion';          // 估价结论
 
 /** 估价方法可选项信息 */
 export const VALUATION_METHODS_CONFIG: Record<
@@ -39,6 +42,7 @@ export const VALUATION_METHODS_CONFIG: Record<
 
 /** 扁平化的方法映射（兼容旧逻辑） */
 export const VALUATION_METHODS: Record<ValuationMethodKey, string> = {
+  'basic-info': '基础信息',
   'sales-comp': '比较法',
   'cost-approach': '成本法',
   'income-approach': '收益法',
@@ -48,6 +52,7 @@ export const VALUATION_METHODS: Record<ValuationMethodKey, string> = {
   'land-sales-comp': '市场比较法',
   'land-income': '收益还原法',
   'cost-approach-land': '成本逼近法',
+  'conclusion': '估价结论',
 };
 
 /** 可比案例（比较法） */

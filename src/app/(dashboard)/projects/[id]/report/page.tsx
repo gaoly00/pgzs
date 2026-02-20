@@ -18,8 +18,6 @@ import {
     File,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { STANDARD_FIELDS } from '@/lib/valuation-schema';
-import { cn } from '@/lib/utils';
 
 export default function ReportPage({
     params,
@@ -155,51 +153,6 @@ export default function ReportPage({
                 </CardContent>
             </Card>
 
-            {/* Extracted Data Preview */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-purple-500" />
-                        Extracted Data Preview
-                    </CardTitle>
-                    <CardDescription>
-                        Data extracted from the spreadsheet via Field Manager.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[...STANDARD_FIELDS, ...(project.customFields || [])].map((field) => {
-                            const val = project.extractedMetrics?.[field.key];
-                            const hasVal = val !== undefined && val !== null && val !== '';
-                            const isCustom = field.key.startsWith('custom:');
-
-                            return (
-                                <div key={field.key} className={cn(
-                                    "flex flex-col gap-1 p-3 border rounded-md transition-colors",
-                                    isCustom ? "bg-purple-50/50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-900"
-                                        : "bg-slate-50 dark:bg-slate-900/50"
-                                )}>
-                                    <div className="flex justify-between items-start">
-                                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider truncate mr-2" title={field.label}>
-                                            {field.label.split('(')[0]}
-                                        </span>
-                                        {isCustom && <span className="text-[9px] bg-purple-100 text-purple-600 px-1 rounded dark:bg-purple-900 dark:text-purple-300">CUSTOM</span>}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className={cn("font-mono text-sm", hasVal ? "text-foreground font-semibold" : "text-muted-foreground italic")}>
-                                            {hasVal ? val : 'N/A'}
-                                        </span>
-                                        {field.valueType === 'number' && <span className="text-[10px] bg-slate-200 px-1 rounded text-slate-500">NUM</span>}
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 truncate" title={field.key}>
-                                        {field.key}
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </CardContent>
-            </Card>
 
             {/* Template Upload (Optional UI) */}
             <Card>

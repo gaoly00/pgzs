@@ -58,8 +58,8 @@ export default function NewProjectPage() {
             valuationMethods: selectedMethods // Use selected checkboxes
         });
 
-        // Redirect to Basic Info page (Module 1)
-        router.push(`/projects/${id}/basic-info`);
+        // 重定向到项目总览页面，让用户自行选择模块
+        router.push(`/projects/${id}`);
     };
 
     return (
