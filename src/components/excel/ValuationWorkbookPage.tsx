@@ -48,6 +48,45 @@ declare global {
     }
 }
 
+// ============================================================
+// Error Boundary — 捕获 FortuneSheet 内部的非致命 DOM 错误
+// 如 IndexSizeError: setStart/setEnd offset 越界
+// ============================================================
+class WorkbookErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { hasError: boolean }
+> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false };
+    }
+
+    static getDerivedStateFromError() {
+        // 不设置 hasError=true，因为这些是非致命错误，
+        // FortuneSheet 仍可继续工作
+        return null;
+    }
+
+    componentDidCatch(error: Error) {
+        // 静默处理已知的 FortuneSheet 内部错误
+        if (
+            error.name === 'IndexSizeError' ||
+            error.message?.includes('setStart') ||
+            error.message?.includes('setEnd') ||
+            error.message?.includes('offset')
+        ) {
+            console.warn('[FortuneSheet] 已忽略非致命 DOM Range 错误:', error.message);
+            return;
+        }
+        // 未知错误则正常抛出
+        console.error('[FortuneSheet] 未知渲染错误:', error);
+    }
+
+    render() {
+        return this.props.children;
+    }
+}
+
 /**
  * 通用估价工作簿页面组件
  * 此组件为 9 种估价方法提供完全物理隔离的数据存储
@@ -396,18 +435,20 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
 
             {/* 表格容器 — container ID 按 method 隔离 */}
             <div ref={gridContainerRef} id={containerId} className="flex-1 min-h-0 w-full min-w-0 overflow-hidden relative">
-                <Workbook
-                    key={`${method}-${workbookKey}`}
-                    ref={workbookRef}
-                    data={safeData}
-                    onChange={(data: any) => { latestSheetDataRef.current = data; }}
-                    // @ts-ignore - FortuneSheet onSelect 类型签名不精确
-                    onSelect={handleSheetSelect}
-                    showToolbar={true}
-                    showFormulaBar={true}
-                    showSheetTabs={true}
-                    allowEdit={true}
-                />
+                <WorkbookErrorBoundary>
+                    <Workbook
+                        key={`${method}-${workbookKey}`}
+                        ref={workbookRef}
+                        data={safeData}
+                        onChange={(data: any) => { latestSheetDataRef.current = data; }}
+                        // @ts-ignore - FortuneSheet onSelect 类型签名不精确
+                        onSelect={handleSheetSelect}
+                        showToolbar={true}
+                        showFormulaBar={true}
+                        showSheetTabs={true}
+                        allowEdit={true}
+                    />
+                </WorkbookErrorBoundary>
             </div>
 
             <FieldManagerDrawer

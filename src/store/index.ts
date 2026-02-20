@@ -20,7 +20,16 @@ import { STANDARD_FIELDS } from '@/lib/valuation-schema';
 // ============================================================
 
 interface SmartValState {
+    // 用户命名空间
+    currentUserId: string | null;
+    projectsByUser: Record<string, Project[]>;
+
+    // 派生属性：当前用户的项目列表
     projects: Project[];
+
+    // 用户管理
+    setCurrentUser: (userId: string) => void;
+    logoutUser: () => void;
 
     // ---- Actions ----
     createProject: (data: CreateProjectInput) => string;
@@ -36,8 +45,8 @@ interface SmartValState {
     // Sales Comp (FortuneSheet — Field Manager & Hybrid Storage)
     bindAnchor: (projectId: string, fieldKey: string, anchor: SalesAnchor) => void;
     unbindAnchor: (projectId: string, fieldKey: string) => void;
-    updateSalesSheetData: (projectId: string, data: any) => void; // Updates blob only (Legacy)
-    updateSheetData: (projectId: string, sheetType: string, data: any) => void; // New: Isolated updates
+    updateSalesSheetData: (projectId: string, data: any) => void;
+    updateSheetData: (projectId: string, sheetType: string, data: any) => void;
 
     // Custom Fields
     addCustomField: (projectId: string, field: CustomFieldDef) => void;
@@ -102,6 +111,23 @@ function updateProjectInList(
     return projects.map((p) => (p.id === projectId ? updater(p) : p));
 }
 
+/** 获取当前用户的项目列表 */
+function getUserProjects(state: SmartValState): Project[] {
+    const uid = state.currentUserId;
+    if (!uid) return [];
+    return state.projectsByUser[uid] ?? [];
+}
+
+/** 生成更新当前用户项目列表的 partial state */
+function setUserProjects(state: SmartValState, projects: Project[]): Partial<SmartValState> {
+    const uid = state.currentUserId;
+    if (!uid) return {};
+    return {
+        projectsByUser: { ...state.projectsByUser, [uid]: projects },
+        projects, // 同步派生属性
+    };
+}
+
 // ============================================================
 // Store
 // ============================================================
@@ -109,7 +135,20 @@ function updateProjectInList(
 export const useSmartValStore = create<SmartValState>()(
     persist(
         (set, get) => ({
+            currentUserId: null,
+            projectsByUser: {},
             projects: [],
+
+            setCurrentUser: (userId: string) => {
+                set((state) => ({
+                    currentUserId: userId,
+                    projects: state.projectsByUser[userId] ?? [],
+                }));
+            },
+
+            logoutUser: () => {
+                set({ currentUserId: null, projects: [] });
+            },
 
             // ---- Create Project ----
             createProject: (data) => {
@@ -132,9 +171,8 @@ export const useSmartValStore = create<SmartValState>()(
                         manualUnitPrice: null,
                         manualReason: '',
                     },
-                    // FortuneSheet fields
                     salesSheetData: null,
-                    sheetData: {}, // New: Init isolation map
+                    sheetData: {},
                     salesAnchors: {},
                     salesResult: { unitPrice: null, totalValue: null },
                     extractedMetrics: {},
@@ -146,39 +184,45 @@ export const useSmartValStore = create<SmartValState>()(
                     createdAt: now,
                     updatedAt: now,
                 };
-                set((state) => ({ projects: [...state.projects, newProject] }));
+                set((state) => {
+                    const cur = getUserProjects(state);
+                    return setUserProjects(state, [...cur, newProject]);
+                });
                 return id;
             },
 
             // ---- Delete Project ----
             deleteProject: (id) => {
-                set((state) => ({
-                    projects: state.projects.filter((p) => p.id !== id),
-                }));
+                set((state) => {
+                    const cur = getUserProjects(state).filter((p) => p.id !== id);
+                    return setUserProjects(state, cur);
+                });
             },
 
             // ---- Update Project ----
             updateProject: (id, patch) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, id, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), id, (p) =>
                         setDirty({ ...p, ...patch }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ---- Valuation Methods ----
             updateValuationMethods: (projectId, methods) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({ ...p, valuationMethods: methods }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ---- Sales Comp Cases (Legacy) ----
             addSalesCompCase: (projectId) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: [
@@ -194,32 +238,35 @@ export const useSmartValStore = create<SmartValState>()(
                                 },
                             ],
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             updateSalesCompCase: (projectId, caseId, patch) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: p.salesCompCases.map((c) =>
                                 c.id === caseId ? { ...c, ...patch } : c,
                             ),
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             deleteSalesCompCase: (projectId, caseId) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: p.salesCompCases.filter((c) => c.id !== caseId),
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ============================================================
@@ -227,55 +274,60 @@ export const useSmartValStore = create<SmartValState>()(
             // ============================================================
 
             bindAnchor: (projectId, fieldKey, anchor) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors, [fieldKey]: anchor };
                         return setDirty({ ...p, salesAnchors: nextAnchors });
-                    }),
-                }));
+                    });
+                    return setUserProjects(state, updated);
+                });
             },
 
             unbindAnchor: (projectId, fieldKey) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors };
                         delete nextAnchors[fieldKey];
                         return setDirty({ ...p, salesAnchors: nextAnchors });
-                    }),
-                }));
+                    });
+                    return setUserProjects(state, updated);
+                });
             },
 
             updateSalesSheetData: (projectId, data) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
-                        setDirty({ ...p, salesSheetData: data }), // Keep legacy for sales-comp
-                    ),
-                }));
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                        setDirty({ ...p, salesSheetData: data }),
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             updateSheetData: (projectId, sheetType, data) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
                         const newSheets = { ...(p.sheetData || {}), [sheetType]: data };
                         return setDirty({ ...p, sheetData: newSheets });
-                    }),
-                }));
+                    });
+                    return setUserProjects(state, updated);
+                });
             },
 
             addCustomField: (projectId, field) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             customFields: [...(p.customFields || []), field],
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             removeCustomField: (projectId, fieldKey) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors };
                         delete nextAnchors[fieldKey];
 
@@ -284,19 +336,18 @@ export const useSmartValStore = create<SmartValState>()(
                             customFields: (p.customFields || []).filter(f => f.key !== fieldKey),
                             salesAnchors: nextAnchors,
                         });
-                    }),
-                }));
+                    });
+                    return setUserProjects(state, updated);
+                });
             },
 
             extractMetricsFromData: (projectId, data) => {
-                // Read current project state safely
-                const project = get().projects.find(p => p.id === projectId);
+                const project = getUserProjects(get()).find(p => p.id === projectId);
                 if (!project) return;
 
                 const anchors = project.salesAnchors || {};
                 const extracted: Record<string, string | number | null> = {};
 
-                // Iterate Standard Fields + Custom Fields
                 const allFields = [...STANDARD_FIELDS, ...(project.customFields || [])];
 
                 allFields.forEach(field => {
@@ -306,23 +357,16 @@ export const useSmartValStore = create<SmartValState>()(
                         return;
                     }
 
-                    // Extract using safe utilities
-                    // Note: anchor has sheetId. data is workbook blob (array of sheets).
-                    // We must pass data + sheetId to getCellValue.
                     let val: string | number | null = null;
-
                     if (field.valueType === 'number') {
                         val = getCellNumberValue(data, anchor.sheetId, anchor.r, anchor.c);
                     } else {
-                        // Text
                         val = getCellValue(data, anchor.sheetId, anchor.r, anchor.c);
                         if (val !== null) val = String(val);
                     }
-
                     extracted[field.key] = val;
                 });
 
-                // Also update legacy salesResult if relevant keys exist
                 const legacyResult = { ...project.salesResult };
                 if (extracted['subject_value_unit'] !== undefined) {
                     legacyResult.unitPrice = typeof extracted['subject_value_unit'] === 'number' ? extracted['subject_value_unit'] : null;
@@ -331,21 +375,22 @@ export const useSmartValStore = create<SmartValState>()(
                     legacyResult.totalValue = typeof extracted['subject_value_total'] === 'number' ? extracted['subject_value_total'] : null;
                 }
 
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             extractedMetrics: extracted,
                             salesResult: legacyResult
                         })
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ---- Cost Items ----
             addCostItem: (projectId) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: [
@@ -353,65 +398,79 @@ export const useSmartValStore = create<SmartValState>()(
                                 { id: generateId(), name: '', amount: null },
                             ],
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             updateCostItem: (projectId, itemId, patch) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: p.costItems.map((item) =>
                                 item.id === itemId ? { ...item, ...patch } : item,
                             ),
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             deleteCostItem: (projectId, itemId) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: p.costItems.filter((item) => item.id !== itemId),
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ---- Conclusion ----
             updateConclusion: (projectId, patch) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
                         setDirty({
                             ...p,
                             conclusion: { ...p.conclusion, ...patch },
                         }),
-                    ),
-                }));
+                    );
+                    return setUserProjects(state, updated);
+                });
             },
 
             // ---- Generate Report ----
             generateReport: (projectId) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) => ({
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => ({
                         ...p,
                         status: {
                             isDirty: false,
                             reportGeneratedAt: new Date().toISOString(),
                         },
                         updatedAt: new Date().toISOString(),
-                    })),
-                }));
+                    }));
+                    return setUserProjects(state, updated);
+                });
             },
         }),
         {
-            name: 'smartval.store.v1',
+            name: 'smartval.store.v2',
             storage: createJSONStorage(() => localStorage),
-            // Only persist projects data, not actions
-            partialize: (state) => ({ projects: state.projects }),
+            // 持久化用户 ID 和按用户隔离的项目数据
+            partialize: (state) => ({
+                currentUserId: state.currentUserId,
+                projectsByUser: state.projectsByUser,
+            }),
+            // 水合时恢复派生的 projects
+            onRehydrateStorage: () => (state) => {
+                if (state && state.currentUserId) {
+                    state.projects = state.projectsByUser[state.currentUserId] ?? [];
+                }
+            },
             skipHydration: true,
         },
     ),
