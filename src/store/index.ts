@@ -68,6 +68,7 @@ interface SmartValState {
     updateConclusion: (projectId: string, patch: Partial<Conclusion>) => void;
 
     // Report
+    saveReportContent: (projectId: string, htmlContent: string) => void;
     generateReport: (projectId: string) => void;
 }
 
@@ -437,6 +438,16 @@ export const useSmartValStore = create<SmartValState>()(
                             ...p,
                             conclusion: { ...p.conclusion, ...patch },
                         }),
+                    );
+                    return setUserProjects(state, updated);
+                });
+            },
+
+            // ---- Save Report Content ----
+            saveReportContent: (projectId, htmlContent) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                        setDirty({ ...p, reportContent: htmlContent }),
                     );
                     return setUserProjects(state, updated);
                 });

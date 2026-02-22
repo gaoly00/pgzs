@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "@fortune-sheet/react/dist/index.css";
 
+@plugin "@tailwindcss/typography";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

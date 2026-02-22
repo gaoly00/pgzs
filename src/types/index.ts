@@ -146,6 +146,9 @@ export interface Project {
   extractedMetrics: Record<string, string | number | null>; // New: Generic extracted results
   customFields: CustomFieldDef[];       // New: User-defined fields
 
+  // 报告内容（富文本 HTML）
+  reportContent?: string;
+
   // 状态
   status: ProjectStatus;
   createdAt: string;

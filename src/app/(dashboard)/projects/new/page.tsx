@@ -47,7 +47,7 @@ export default function NewProjectPage() {
         );
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
 
@@ -57,6 +57,23 @@ export default function NewProjectPage() {
             projectType,
             valuationMethods: selectedMethods // Use selected checkboxes
         });
+
+        // 异步复制母板模板到项目目录（不阻断项目创建流程）
+        try {
+            const res = await fetch(`/api/projects/${id}/sales-comp/copy-template`, {
+                method: 'POST',
+            });
+            const data = await res.json();
+            if (data.ok) {
+                console.log(`[项目创建] 已复制比较法模板到项目 ${id}`);
+            } else if (data.templateMissing) {
+                console.warn(`[项目创建] 母板模板未上传，跳过复制`);
+            } else {
+                console.warn(`[项目创建] 模板复制失败:`, data.error);
+            }
+        } catch (err) {
+            console.warn(`[项目创建] 模板复制请求失败:`, err);
+        }
 
         // 重定向到项目总览页面，让用户自行选择模块
         router.push(`/projects/${id}`);

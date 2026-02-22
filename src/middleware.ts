@@ -13,7 +13,7 @@ import type { NextRequest } from 'next/server';
 const PROTECTED_PREFIXES = ['/projects', '/settings'];
 
 // 公开路径（不需要认证）
-const PUBLIC_PATHS = ['/login', '/register', '/api/auth', '/forgot-password', '/admin/users'];
+const PUBLIC_PATHS = ['/login', '/register', '/api/auth', '/forgot-password', '/admin'];
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
