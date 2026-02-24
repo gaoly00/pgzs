@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { apiGet, apiPostForm, apiDelete } from '@/lib/api-client';
 import {
     ArrowLeft,
     Upload,
@@ -51,9 +52,12 @@ function TemplateManagementContent() {
     const fetchExcelStatus = useCallback(async () => {
         setExcelLoading(true);
         try {
-            const res = await fetch('/api/templates/sales-comp/status');
-            const data = await res.json();
-            setExcelStatus(data);
+            const result = await apiGet<ExcelTemplateStatus>('/api/templates/sales-comp/status');
+            if (result.ok) {
+                setExcelStatus(result.data);
+            } else {
+                toast.error('无法获取 Excel 模板状态');
+            }
         } catch {
             toast.error('无法获取 Excel 模板状态');
         } finally {
@@ -83,18 +87,14 @@ function TemplateManagementContent() {
         try {
             const formData = new FormData();
             formData.append('file', file);
-            const res = await fetch('/api/templates/sales-comp/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (data.ok) {
+            const result = await apiPostForm<{ ok: boolean; error?: string }>('/api/templates/sales-comp/upload', formData);
+            if (result.ok && result.data.ok) {
                 toast.success('Excel 模板上传成功', {
                     description: `文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
                 });
                 fetchExcelStatus();
             } else {
-                toast.error('上传失败', { description: data.error });
+                toast.error('上传失败', { description: result.ok ? result.data.error : result.error });
             }
         } catch {
             toast.error('网络错误');
@@ -125,10 +125,9 @@ function TemplateManagementContent() {
     const fetchWordTemplates = useCallback(async () => {
         setWordLoading(true);
         try {
-            const res = await fetch('/api/templates/word');
-            if (res.ok) {
-                const data = await res.json();
-                setWordTemplates(data.templates || []);
+            const result = await apiGet<{ templates: WordTemplateMeta[] }>('/api/templates/word');
+            if (result.ok) {
+                setWordTemplates(result.data.templates || []);
             }
         } catch {
             // 静默
@@ -156,16 +155,12 @@ function TemplateManagementContent() {
         try {
             const formData = new FormData();
             formData.append('file', file);
-            const res = await fetch('/api/templates/word', {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (res.ok && data.ok) {
-                toast.success(`Word 模板「${data.template.name}」上传成功，发现 ${data.template.placeholders.length} 个占位符`);
+            const result = await apiPostForm<{ ok: boolean; template: WordTemplateMeta; error?: string }>('/api/templates/word', formData);
+            if (result.ok && result.data.ok) {
+                toast.success(`Word 模板「${result.data.template.name}」上传成功，发现 ${result.data.template.placeholders.length} 个占位符`);
                 fetchWordTemplates();
             } else {
-                toast.error(data.error || '上传失败');
+                toast.error(result.ok ? (result.data.error || '上传失败') : result.error);
             }
         } catch (err) {
             console.error('Word 模板上传失败:', err);
@@ -182,13 +177,12 @@ function TemplateManagementContent() {
             return;
         }
         try {
-            const res = await fetch(`/api/templates/word/${templateId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (res.ok && data.ok) {
-                toast.success(data.message || 'Word 模板已删除');
+            const result = await apiDelete<{ ok: boolean; message?: string; error?: string }>(`/api/templates/word/${templateId}`);
+            if (result.ok && result.data.ok) {
+                toast.success(result.data.message || 'Word 模板已删除');
                 fetchWordTemplates();
             } else {
-                toast.error(data.error || '删除失败');
+                toast.error(result.ok ? (result.data.error || '删除失败') : result.error);
             }
         } catch {
             toast.error('网络错误');

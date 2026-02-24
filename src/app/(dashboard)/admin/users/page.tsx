@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { apiGet, apiPatch } from '@/lib/api-client';
 import {
     ArrowLeft,
     Users,
@@ -51,10 +52,9 @@ function UserManagementContent() {
     const fetchUsers = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/admin/users');
-            if (!res.ok) throw new Error('获取失败');
-            const data = await res.json();
-            setUsers(data.users || []);
+            const result = await apiGet<{ users: UserItem[] }>('/api/admin/users');
+            if (!result.ok) throw new Error(result.error);
+            setUsers(result.data.users || []);
         } catch {
             toast.error('获取用户列表失败');
         } finally {
@@ -79,17 +79,12 @@ function UserManagementContent() {
 
         setUpdatingId(userId);
         try {
-            const res = await fetch('/api/admin/users', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, role: newRole }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                toast.error(data.error || '修改失败');
+            const result = await apiPatch<{ message: string }>('/api/admin/users', { userId, role: newRole });
+            if (!result.ok) {
+                toast.error(result.error || '修改失败');
                 return;
             }
-            toast.success(data.message);
+            toast.success(result.data.message);
             // 更新本地状态
             setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
         } catch {

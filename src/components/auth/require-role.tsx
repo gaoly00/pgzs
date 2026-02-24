@@ -10,10 +10,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Loader2, ShieldX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { apiGet } from '@/lib/api-client';
 
 export type UserRole = 'admin' | 'manager' | 'reviewer' | 'valuer';
 
@@ -32,7 +32,6 @@ interface RequireRoleProps {
 }
 
 export function RequireRole({ allowedRoles, children, currentUser: externalUser }: RequireRoleProps) {
-    const router = useRouter();
     const [user, setUser] = useState<CurrentUser | null>(externalUser ?? null);
     const [status, setStatus] = useState<'loading' | 'authorized' | 'forbidden' | 'unauthenticated'>(
         externalUser ? (allowedRoles.includes(externalUser.role) ? 'authorized' : 'forbidden') : 'loading'
@@ -41,30 +40,25 @@ export function RequireRole({ allowedRoles, children, currentUser: externalUser 
     useEffect(() => {
         if (externalUser) return; // 外部已传入用户数据
 
-        fetch('/api/auth/me')
-            .then(res => {
-                if (res.status === 401) {
+        apiGet<CurrentUser>('/api/auth/me')
+            .then((result) => {
+                if (!result.ok) {
+                    // api-client already redirects to /login on 401
                     setStatus('unauthenticated');
-                    router.push('/login');
-                    throw new Error('Not logged in');
+                    return;
                 }
-                return res.json();
-            })
-            .then((data: CurrentUser) => {
-                setUser(data);
-                if (allowedRoles.includes(data.role)) {
+                setUser(result.data);
+                if (allowedRoles.includes(result.data.role)) {
                     setStatus('authorized');
                 } else {
                     setStatus('forbidden');
                 }
             })
             .catch((err) => {
-                if (err.message !== 'Not logged in') {
-                    console.error('权限校验失败:', err);
-                    setStatus('forbidden');
-                }
+                console.error('权限校验失败:', err);
+                setStatus('forbidden');
             });
-    }, [allowedRoles, externalUser, router]);
+    }, [allowedRoles, externalUser]);
 
     if (status === 'loading') {
         return (
@@ -110,12 +104,12 @@ export function useCurrentUser() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/auth/me')
-            .then(res => {
-                if (!res.ok) throw new Error('Not logged in');
-                return res.json();
+        apiGet<CurrentUser>('/api/auth/me')
+            .then((result) => {
+                if (result.ok) {
+                    setUser(result.data);
+                }
             })
-            .then((data: CurrentUser) => setUser(data))
             .catch(() => setUser(null))
             .finally(() => setLoading(false));
     }, []);

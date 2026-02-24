@@ -7,6 +7,7 @@ import { Database, AlertTriangle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { RequireRole, useCurrentUser } from '@/components/auth/require-role';
 import Link from 'next/link';
 import { useSmartValStore } from '@/store';
+import { apiPost } from '@/lib/api-client';
 
 function MigrateContent() {
     const { user } = useCurrentUser();
@@ -58,21 +59,16 @@ function MigrateContent() {
                 return;
             }
 
-            const res = await fetch('/api/admin/migrate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    projects: projectsToMigrate,
-                    templates: templatesToMigrate
-                })
+            const result = await apiPost<{ message: string }>('/api/admin/migrate', {
+                projects: projectsToMigrate,
+                templates: templatesToMigrate
             });
 
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || '迁移失败');
+            if (!result.ok) {
+                throw new Error(result.error || '迁移失败');
             }
 
-            setResult({ ok: true, msg: data.message });
+            setResult({ ok: true, msg: result.data.message });
 
             // 迁移成功后强制刷新状态库
             useSmartValStore.getState().loadProjectsFromServer();

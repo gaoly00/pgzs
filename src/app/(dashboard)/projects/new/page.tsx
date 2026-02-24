@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Save } from 'lucide-react';
 import Link from 'next/link';
 import { ProjectValuationType, VALUATION_METHODS_CONFIG, ValuationMethodKey } from '@/types';
+import { apiPost } from '@/lib/api-client';
 
 export default function NewProjectPage() {
     const router = useRouter();
@@ -60,16 +61,13 @@ export default function NewProjectPage() {
 
         // 异步复制母板模板到项目目录（不阻断项目创建流程）
         try {
-            const res = await fetch(`/api/projects/${id}/sales-comp/copy-template`, {
-                method: 'POST',
-            });
-            const data = await res.json();
-            if (data.ok) {
+            const result = await apiPost<{ ok: boolean; templateMissing?: boolean; error?: string }>(`/api/projects/${id}/sales-comp/copy-template`);
+            if (result.ok && result.data.ok) {
                 console.log(`[项目创建] 已复制比较法模板到项目 ${id}`);
-            } else if (data.templateMissing) {
+            } else if (result.ok && result.data.templateMissing) {
                 console.warn(`[项目创建] 母板模板未上传，跳过复制`);
             } else {
-                console.warn(`[项目创建] 模板复制失败:`, data.error);
+                console.warn(`[项目创建] 模板复制失败:`, result.ok ? result.data.error : result.error);
             }
         } catch (err) {
             console.warn(`[项目创建] 模板复制请求失败:`, err);

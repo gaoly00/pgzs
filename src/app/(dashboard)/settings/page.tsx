@@ -7,21 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ShieldCheck, UserCog, ArrowRight, User, LogOut, Construction } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { apiGet, apiPost } from '@/lib/api-client';
 
 export default function SettingsPage() {
     const router = useRouter();
     const [user, setUser] = useState<{ username: string; role?: string } | null>(null);
 
     useEffect(() => {
-        fetch('/api/auth/me')
-            .then(res => {
-                if (res.status === 401) {
-                    router.push('/login');
-                    throw new Error('Not logged in');
+        apiGet<{ username: string; role?: string }>('/api/auth/me')
+            .then(result => {
+                if (result.ok) {
+                    setUser(result.data);
                 }
-                return res.json();
+                // 401 redirect is handled by apiGet automatically
             })
-            .then(data => setUser(data))
             .catch((err) => {
                 console.error(err);
             });
@@ -29,8 +28,8 @@ export default function SettingsPage() {
 
     async function handleLogout() {
         try {
-            const res = await fetch('/api/auth/logout', { method: 'POST' });
-            if (res.ok) {
+            const result = await apiPost('/api/auth/logout');
+            if (result.ok) {
                 toast.success('已安全退出');
                 router.push('/login');
                 router.refresh();

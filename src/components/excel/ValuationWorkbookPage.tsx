@@ -13,6 +13,7 @@ import { readAllSheets, captureSelection } from '@/lib/fortune-api';
 import { rcToA1 } from '@/lib/excel-coords';
 import { ensureWorkbookData } from '@/lib/fortune-template';
 import type { ValuationMethodKey } from '@/types';
+import { apiGet } from '@/lib/api-client';
 
 const Workbook = dynamic(
     () => import('@fortune-sheet/react').then((mod) => mod.Workbook),
@@ -166,22 +167,21 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             try {
                 console.log(`[ValuationWorkbook] 正在加载 project=${projectId}, method=${method} 的数据...`);
                 // 通过鉴权 API 获取数据（带租户隔离）
-                const res = await fetch(`/api/projects/${projectId}/sheets/${method}`);
-                if (!res.ok) {
-                    console.warn(`[ValuationWorkbook] API 返回 ${res.status}`);
+                const result = await apiGet<{ data: any[] }>(`/api/projects/${projectId}/sheets/${method}`);
+                if (!result.ok) {
+                    console.warn(`[ValuationWorkbook] API 返回错误: ${result.error}`);
                     return;
                 }
-                const result = await res.json();
 
                 if (active) {
-                    if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+                    if (result.data.data && Array.isArray(result.data.data) && result.data.data.length > 0) {
                         console.log(`[ValuationWorkbook] 成功恢复 ${method} 的服务器数据`);
 
                         // Store 层隔离：写入 sheetData[method]
-                        updateSheetData(projectId, method, result.data);
+                        updateSheetData(projectId, method, result.data.data);
 
                         // 渲染更新 & 强制重新挂载
-                        setServerSheet(result.data);
+                        setServerSheet(result.data.data);
                         setWorkbookKey(k => k + 1);
                     } else {
                         console.log(`[ValuationWorkbook] ${method} 无服务器数据，使用默认空表`);

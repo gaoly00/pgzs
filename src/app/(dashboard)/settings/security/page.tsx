@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, ShieldCheck, Lock, Eye, EyeOff } from 'lucide-react';
+import { apiPost } from '@/lib/api-client';
 
 export default function ChangePasswordPage() {
     const router = useRouter();
@@ -35,15 +36,10 @@ export default function ChangePasswordPage() {
 
         setLoading(true);
         try {
-            const res = await fetch('/api/auth/change-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ oldPassword, newPassword }),
-            });
-            const data = await res.json();
+            const result = await apiPost<{ error?: string }>('/api/auth/change-password', { oldPassword, newPassword });
 
-            if (!res.ok) {
-                toast.error('修改失败', { description: data.error });
+            if (!result.ok) {
+                toast.error('修改失败', { description: result.error });
                 return;
             }
 

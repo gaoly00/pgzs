@@ -12,6 +12,7 @@ import {
     Upload,
 } from 'lucide-react';
 import Link from 'next/link';
+import { apiGet, apiPost } from '@/lib/api-client';
 
 /**
  * 比较法页面 — 统一使用 ValuationWorkbookPage，data 隔离到 sheetData['sales-comp']
@@ -32,9 +33,12 @@ export default function SalesCompPage({
     // 检查项目工作簿状态
     const checkWorkbookStatus = useCallback(async () => {
         try {
-            const res = await fetch(`/api/projects/${id}/sales-comp/status`);
-            const data = await res.json();
-            setWorkbookStatus({ exists: data.exists, loading: false });
+            const result = await apiGet<{ exists: boolean }>(`/api/projects/${id}/sales-comp/status`);
+            if (result.ok) {
+                setWorkbookStatus({ exists: result.data.exists, loading: false });
+            } else {
+                setWorkbookStatus({ exists: false, loading: false });
+            }
         } catch {
             setWorkbookStatus({ exists: false, loading: false });
         }
@@ -74,19 +78,16 @@ export default function SalesCompPage({
     // 尝试从模板复制工作簿
     const handleCopyTemplate = async () => {
         try {
-            const res = await fetch(`/api/projects/${id}/sales-comp/copy-template`, {
-                method: 'POST',
-            });
-            const data = await res.json();
-            if (data.ok) {
+            const result = await apiPost<{ ok: boolean; templateMissing?: boolean; error?: string }>(`/api/projects/${id}/sales-comp/copy-template`);
+            if (result.ok && result.data.ok) {
                 toast.success('工作簿创建成功', { description: '已从母板模板复制' });
                 setWorkbookStatus({ exists: true, loading: false });
-            } else if (data.templateMissing) {
+            } else if (result.ok && result.data.templateMissing) {
                 toast.error('母板模板未上传', {
                     description: '请管理员先到模板管理页面上传比较法模板',
                 });
             } else {
-                toast.error('创建失败', { description: data.error });
+                toast.error('创建失败', { description: result.ok ? result.data.error : result.error });
             }
         } catch {
             toast.error('请求失败', { description: '网络错误' });

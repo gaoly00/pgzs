@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSmartValStore } from '@/store';
+import { apiGet } from '@/lib/api-client';
 
 /**
  * 认证水合组件 — 在 dashboard 加载时：
@@ -19,14 +20,10 @@ export function AuthHydration({ children }: { children: React.ReactNode }) {
         useSmartValStore.persist.rehydrate();
 
         // 然后获取当前用户
-        fetch('/api/auth/me')
-            .then((res) => {
-                if (res.ok) return res.json();
-                return null;
-            })
-            .then(async (data) => {
-                if (data?.userId) {
-                    setCurrentUser(data.userId);
+        apiGet<{ userId: string; username: string; role: string; tenantId: string }>('/api/auth/me')
+            .then(async (result) => {
+                if (result.ok && result.data?.userId) {
+                    setCurrentUser(result.data.userId);
                     // 从服务端加载项目列表
                     await loadProjectsFromServer();
                 }

@@ -14,6 +14,7 @@ import { DEFAULT_COST_ITEM_NAMES } from '@/types';
 import { generateId } from '@/lib/id';
 import { getCellValue, getCellNumberValue } from '@/lib/excel-utils';
 import { STANDARD_FIELDS } from '@/lib/valuation-schema';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api-client';
 
 // ============================================================
 // Store Interface
@@ -158,12 +159,9 @@ export const useSmartValStore = create<SmartValState>()(
 
             loadProjectsFromServer: async () => {
                 try {
-                    const res = await fetch('/api/projects');
-                    if (!res.ok) return;
-                    const data = await res.json();
-                    if (data.projects && Array.isArray(data.projects)) {
-                        // 服务端项目列表作为权威来源
-                        set({ projects: data.projects });
+                    const result = await apiGet<{ projects: Project[] }>('/api/projects');
+                    if (result.ok && Array.isArray(result.data.projects)) {
+                        set({ projects: result.data.projects });
                     }
                 } catch (err) {
                     console.warn('[store] 从服务端加载项目失败，使用本地缓存:', err);
@@ -175,11 +173,7 @@ export const useSmartValStore = create<SmartValState>()(
                 if (!project) return;
 
                 try {
-                    await fetch(`/api/projects/${projectId}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(project),
-                    });
+                    await apiPatch(`/api/projects/${projectId}`, project);
                 } catch (err) {
                     console.warn('[store] 同步项目到服务端失败:', err);
                 }
@@ -228,15 +222,9 @@ export const useSmartValStore = create<SmartValState>()(
             // ---- Create Project (API 版本) ----
             createProjectViaAPI: async (data) => {
                 try {
-                    const res = await fetch('/api/projects', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data),
-                    });
-                    const result = await res.json();
-                    if (res.ok && result.project) {
-                        // 将服务端返回的项目补充前端需要的默认字段
-                        const serverProject = result.project;
+                    const result = await apiPost<{ project: any }>('/api/projects', data);
+                    if (result.ok && result.data.project) {
+                        const serverProject = result.data.project;
                         const fullProject: Project = {
                             ...serverProject,
                             salesCompCases: serverProject.salesCompCases ?? createDefaultSalesCompCases(),
@@ -259,7 +247,7 @@ export const useSmartValStore = create<SmartValState>()(
                         }));
                         return fullProject.id;
                     }
-                    throw new Error(result.error || '创建失败');
+                    throw new Error(!result.ok ? result.error : '创建失败');
                 } catch (err) {
                     console.error('[store] API 创建项目失败，回退到本地:', err);
                     // 回退到本地创建
@@ -277,8 +265,8 @@ export const useSmartValStore = create<SmartValState>()(
             // ---- Delete Project (API 版本) ----
             deleteProjectViaAPI: async (id) => {
                 try {
-                    const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-                    if (res.ok) {
+                    const result = await apiDelete(`/api/projects/${id}`);
+                    if (result.ok) {
                         set((state) => ({
                             projects: state.projects.filter((p) => p.id !== id),
                         }));
