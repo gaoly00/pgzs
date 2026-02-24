@@ -1,20 +1,10 @@
 /**
- * 项目 Repository — 服务端项目数据持久化
+ * 项目 Repository — SQLite
  *
- * 按租户隔离存储：data/projects/{tenantId}/projects.json
- * 每个租户的所有项目元数据存储在一个 JSON 文件中。
- *
- * 后续可替换为数据库（Prisma/PostgreSQL）。
+ * 保持函数签名不变，API 路由无需改动。
  */
 
-import fs from 'fs';
-import path from 'path';
-
-const DATA_DIR = path.join(process.cwd(), 'data');
-
-// ============================================================
-// 项目数据类型（与前端 Project 接口对齐）
-// ============================================================
+import { getDb } from '@/lib/db/index';
 
 export interface ServerProject {
     id: string;
@@ -27,108 +17,116 @@ export interface ServerProject {
     gfa: number | null;
     address: string;
     valuationMethods: string[];
-    // FortuneSheet 数据不存这里，走独立的 sheet-repo
     salesAnchors: Record<string, any>;
     salesResult: { unitPrice: number | null; totalValue: number | null };
     extractedMetrics: Record<string, string | number | null>;
     customFields: Array<{ key: string; label: string; valueType: string; unit?: string }>;
     templateId?: string;
     reportContent?: string;
-    status: {
-        isDirty: boolean;
-        reportGeneratedAt: string | null;
-    };
-    createdBy: string;  // userId
+    status: { isDirty: boolean; reportGeneratedAt: string | null };
+    createdBy: string;
     createdAt: string;
     updatedAt: string;
 }
 
-// ============================================================
-// 路径工具
-// ============================================================
-
-function tenantDir(tenantId: string): string {
-    return path.join(DATA_DIR, 'projects', tenantId);
+function rowToProject(r: any): ServerProject {
+    return {
+        id: r.id,
+        tenantId: r.tenant_id,
+        name: r.name,
+        projectNumber: r.project_number || undefined,
+        projectType: r.project_type,
+        valuationDate: r.valuation_date,
+        propertyType: r.property_type,
+        gfa: r.gfa,
+        address: r.address,
+        valuationMethods: JSON.parse(r.valuation_methods || '[]'),
+        salesAnchors: JSON.parse(r.sales_anchors || '{}'),
+        salesResult: JSON.parse(r.sales_result || '{}'),
+        extractedMetrics: JSON.parse(r.extracted_metrics || '{}'),
+        customFields: JSON.parse(r.custom_fields || '[]'),
+        templateId: r.template_id || undefined,
+        reportContent: r.report_content || undefined,
+        status: JSON.parse(r.status || '{}'),
+        createdBy: r.created_by,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+    };
 }
 
-function projectsFile(tenantId: string): string {
-    return path.join(tenantDir(tenantId), 'projects.json');
-}
-
-function ensureTenantDir(tenantId: string): void {
-    const dir = tenantDir(tenantId);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
-
-// ============================================================
-// 原子写 JSON
-// ============================================================
-
-function writeJsonAtomic(filePath: string, data: any): void {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    const tmp = filePath + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tmp, filePath);
-}
-
-// ============================================================
-// CRUD 操作
-// ============================================================
-
-/** 读取租户的所有项目 */
 export function listProjects(tenantId: string): ServerProject[] {
-    const file = projectsFile(tenantId);
-    if (!fs.existsSync(file)) return [];
-    try {
-        const raw = fs.readFileSync(file, 'utf-8');
-        return JSON.parse(raw);
-    } catch {
-        return [];
-    }
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM projects WHERE tenant_id = ?').all(tenantId) as any[];
+    return rows.map(rowToProject);
 }
 
-/** 根据 ID 获取单个项目 */
 export function getProject(tenantId: string, projectId: string): ServerProject | null {
-    const projects = listProjects(tenantId);
-    return projects.find(p => p.id === projectId) ?? null;
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM projects WHERE tenant_id = ? AND id = ?').get(tenantId, projectId) as any;
+    if (!row) return null;
+    return rowToProject(row);
 }
 
-/** 创建项目 */
 export function createProject(tenantId: string, project: ServerProject): void {
-    ensureTenantDir(tenantId);
-    const projects = listProjects(tenantId);
-    projects.push(project);
-    writeJsonAtomic(projectsFile(tenantId), projects);
+    const db = getDb();
+    db.prepare(
+        `INSERT INTO projects (id, tenant_id, name, project_number, project_type, valuation_date,
+         property_type, gfa, address, valuation_methods, sales_anchors, sales_result,
+         extracted_metrics, custom_fields, template_id, report_content, status,
+         created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+        project.id, tenantId, project.name, project.projectNumber || null,
+        project.projectType, project.valuationDate, project.propertyType,
+        project.gfa, project.address,
+        JSON.stringify(project.valuationMethods),
+        JSON.stringify(project.salesAnchors),
+        JSON.stringify(project.salesResult),
+        JSON.stringify(project.extractedMetrics),
+        JSON.stringify(project.customFields),
+        project.templateId || null, project.reportContent || null,
+        JSON.stringify(project.status),
+        project.createdBy, project.createdAt, project.updatedAt,
+    );
 }
 
-/** 更新项目（部分更新） */
 export function updateProject(tenantId: string, projectId: string, patch: Partial<ServerProject>): ServerProject | null {
-    const projects = listProjects(tenantId);
-    const idx = projects.findIndex(p => p.id === projectId);
-    if (idx === -1) return null;
+    const existing = getProject(tenantId, projectId);
+    if (!existing) return null;
 
-    projects[idx] = {
-        ...projects[idx],
+    const merged = {
+        ...existing,
         ...patch,
-        id: projects[idx].id,       // 不允许修改 id
-        tenantId: projects[idx].tenantId, // 不允许修改 tenantId
+        id: existing.id,
+        tenantId: existing.tenantId,
         updatedAt: new Date().toISOString(),
     };
 
-    writeJsonAtomic(projectsFile(tenantId), projects);
-    return projects[idx];
+    const db = getDb();
+    db.prepare(
+        `UPDATE projects SET name=?, project_number=?, project_type=?, valuation_date=?,
+         property_type=?, gfa=?, address=?, valuation_methods=?, sales_anchors=?,
+         sales_result=?, extracted_metrics=?, custom_fields=?, template_id=?,
+         report_content=?, status=?, updated_at=?
+         WHERE id=? AND tenant_id=?`
+    ).run(
+        merged.name, merged.projectNumber || null, merged.projectType,
+        merged.valuationDate, merged.propertyType, merged.gfa, merged.address,
+        JSON.stringify(merged.valuationMethods),
+        JSON.stringify(merged.salesAnchors),
+        JSON.stringify(merged.salesResult),
+        JSON.stringify(merged.extractedMetrics),
+        JSON.stringify(merged.customFields),
+        merged.templateId || null, merged.reportContent || null,
+        JSON.stringify(merged.status), merged.updatedAt,
+        projectId, tenantId,
+    );
+
+    return merged;
 }
 
-/** 删除项目 */
 export function deleteProject(tenantId: string, projectId: string): boolean {
-    const projects = listProjects(tenantId);
-    const filtered = projects.filter(p => p.id !== projectId);
-    if (filtered.length === projects.length) return false; // 未找到
-    writeJsonAtomic(projectsFile(tenantId), filtered);
-    return true;
+    const db = getDb();
+    const result = db.prepare('DELETE FROM projects WHERE id = ? AND tenant_id = ?').run(projectId, tenantId);
+    return result.changes > 0;
 }

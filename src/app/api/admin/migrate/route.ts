@@ -10,6 +10,8 @@ import { verifySession } from '@/lib/auth/session';
 import { createProject, getProject } from '@/lib/repositories/project-repo';
 import { saveSheetData } from '@/lib/repositories/sheet-repo';
 import { writeAuditLog, AuditAction } from '@/lib/audit-logger';
+import { migrateUsersLegacyFields } from '@/lib/auth/store';
+import { getDb } from '@/lib/db/index';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest) {
 
         let migratedProjectsCount = 0;
         let migratedTemplatesCount = 0;
+
+        // --- 0. 迁移旧用户数据（补全 role/tenantId，确保租户记录） ---
+        const userMigration = migrateUsersLegacyFields();
 
         // --- 1. 迁移项目数据 ---
         if (Array.isArray(projects)) {
@@ -72,17 +77,13 @@ export async function POST(request: NextRequest) {
         if (Array.isArray(templates)) {
             if (!fs.existsSync(WORD_DIR)) fs.mkdirSync(WORD_DIR, { recursive: true });
 
-            // 简单读取现有 meta
-            const metaFile = path.join(WORD_DIR, '..', 'word-templates.json');
-            let metaList: any[] = [];
-            if (fs.existsSync(metaFile)) {
-                try { metaList = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch { }
-            }
+            const db = getDb();
 
             for (const t of templates) {
                 if (t.docxBase64 && t.id) {
                     // 仅迁移尚未在服务端存在的模板
-                    if (!metaList.find(m => m.id === t.id)) {
+                    const existing = db.prepare('SELECT id FROM word_templates WHERE id = ?').get(t.id);
+                    if (!existing) {
                         const buffer = Buffer.from(t.docxBase64, 'base64');
                         fs.writeFileSync(path.join(WORD_DIR, `${t.id}.docx`), buffer);
 
@@ -90,21 +91,21 @@ export async function POST(request: NextRequest) {
                             fs.writeFileSync(path.join(WORD_DIR, `${t.id}.html`), t.html, 'utf-8');
                         }
 
-                        metaList.push({
-                            id: t.id,
-                            name: t.name || 'Migrated Template',
-                            tenantId: session.tenantId,
-                            size: buffer.length,
-                            uploadedAt: new Date().toISOString(),
-                            uploadedBy: session.username,
-                        });
+                        db.prepare(
+                            `INSERT OR IGNORE INTO word_templates (id, name, original_name, size, placeholders, uploaded_by, uploaded_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?)`
+                        ).run(
+                            t.id,
+                            t.name || 'Migrated Template',
+                            t.fileName || `${t.name || 'template'}.docx`,
+                            buffer.length,
+                            JSON.stringify(t.placeholders || []),
+                            session.username,
+                            new Date().toISOString(),
+                        );
                         migratedTemplatesCount++;
                     }
                 }
-            }
-            // 写回 meta
-            if (migratedTemplatesCount > 0) {
-                fs.writeFileSync(metaFile, JSON.stringify(metaList, null, 2), 'utf-8');
             }
         }
 
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
             userId: session.userId,
             username: session.username,
             tenantId: session.tenantId,
-            details: `迁移完成：导入 ${migratedProjectsCount} 个项目，${migratedTemplatesCount} 个模板`,
+            details: `迁移完成：导入 ${migratedProjectsCount} 个项目，${migratedTemplatesCount} 个模板，${userMigration.migrated} 个用户字段补全`,
         });
 
         return NextResponse.json({

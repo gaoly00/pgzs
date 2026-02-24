@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
 import { verifySession } from '@/lib/auth/session';
+import { getProject } from '@/lib/repositories/project-repo';
 
-// 路径常量
 const PROJECTS_DIR = path.join(process.cwd(), 'data', 'projects');
 const PROJECT_WORKBOOK_FILENAME = 'sales_comp.xlsx';
 
 /**
  * GET /api/projects/[id]/sales-comp/download
- * 下载项目的比较法工作簿副本 (.xlsx)
- * 保留所有公式和内部链接
+ * 下载项目的比较法工作簿副本（租户隔离）
  */
 export async function GET(
     _request: NextRequest,
@@ -19,22 +18,24 @@ export async function GET(
     const { id: projectId } = await params;
 
     if (!projectId) {
-        return NextResponse.json(
-            { error: '缺少项目 ID' },
-            { status: 400 }
-        );
+        return NextResponse.json({ error: '缺少项目 ID' }, { status: 400 });
     }
 
     try {
-        // 鉴权
         const session = await verifySession();
         if (!session) {
             return NextResponse.json({ error: '未登录' }, { status: 401 });
         }
 
-        const workbookPath = path.join(PROJECTS_DIR, projectId, PROJECT_WORKBOOK_FILENAME);
+        // 租户隔离：验证项目归属
+        const project = getProject(session.tenantId, projectId);
+        if (!project) {
+            return NextResponse.json({ error: '项目不存在' }, { status: 404 });
+        }
 
-        // 检查文件是否存在
+        // 使用租户隔离路径
+        const workbookPath = path.join(PROJECTS_DIR, session.tenantId, projectId, PROJECT_WORKBOOK_FILENAME);
+
         try {
             await stat(workbookPath);
         } catch {
@@ -44,10 +45,8 @@ export async function GET(
             );
         }
 
-        // 读取文件
         const fileBuffer = await readFile(workbookPath);
 
-        // 返回文件下载响应
         return new NextResponse(fileBuffer, {
             status: 200,
             headers: {
@@ -58,9 +57,6 @@ export async function GET(
         });
     } catch (error) {
         console.error('[工作簿下载] 错误:', error);
-        return NextResponse.json(
-            { error: '下载失败: ' + String(error) },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: '下载失败' }, { status: 500 });
     }
 }

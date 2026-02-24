@@ -1,53 +1,42 @@
 /**
- * Word 模板 API
- * GET  /api/templates/word — 获取模板列表（元数据，不含 base64）
+ * Word 模板 API — SQLite 元数据
+ * GET  /api/templates/word — 获取模板列表
  * POST /api/templates/word — 上传新模板
- * 
- * 模板文件存储：data/templates/word/{id}.docx
- * 元数据存储：data/templates/word-templates.json
+ *
+ * 模板文件仍存储在磁盘：data/templates/word/{id}.docx
+ * 元数据存储在 SQLite word_templates 表
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/auth/session';
-import { mkdir, writeFile, readFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { getDb } from '@/lib/db/index';
 
 const WORD_DIR = path.join(process.cwd(), 'data', 'templates', 'word');
-const META_FILE = path.join(process.cwd(), 'data', 'templates', 'word-templates.json');
-
-// 允许上传的角色
 const UPLOAD_ROLES = ['admin', 'manager'];
 
-// 模板元数据类型
 interface WordTemplateMeta {
     id: string;
     name: string;
-    fileName: string;
+    originalName: string;
     placeholders: string[];
-    fileSizeBytes: number;
+    size: number;
     uploadedAt: string;
-    updatedAt: string;
     uploadedBy: string;
 }
 
-// 读取元数据文件
-async function readMetas(): Promise<WordTemplateMeta[]> {
-    try {
-        const raw = await readFile(META_FILE, 'utf-8');
-        return JSON.parse(raw);
-    } catch {
-        return [];
-    }
-}
-
-// 写入元数据文件
-async function writeMetas(metas: WordTemplateMeta[]): Promise<void> {
-    await mkdir(path.dirname(META_FILE), { recursive: true });
-    const tmp = META_FILE + '.tmp';
-    await writeFile(tmp, JSON.stringify(metas, null, 2), 'utf-8');
-    const fs = await import('fs');
-    fs.renameSync(tmp, META_FILE);
+function rowToMeta(r: any): WordTemplateMeta {
+    return {
+        id: r.id,
+        name: r.name,
+        originalName: r.original_name,
+        placeholders: JSON.parse(r.placeholders || '[]'),
+        size: r.size,
+        uploadedAt: r.uploaded_at,
+        uploadedBy: r.uploaded_by,
+    };
 }
 
 /** GET — 获取 Word 模板列表 */
@@ -58,8 +47,20 @@ export async function GET() {
             return NextResponse.json({ error: '未登录' }, { status: 401 });
         }
 
-        const metas = await readMetas();
-        return NextResponse.json({ templates: metas });
+        const db = getDb();
+        const rows = db.prepare('SELECT * FROM word_templates ORDER BY uploaded_at DESC').all() as any[];
+        // 返回兼容旧格式的字段名
+        const templates = rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            fileName: r.original_name,
+            placeholders: JSON.parse(r.placeholders || '[]'),
+            fileSizeBytes: r.size,
+            uploadedAt: r.uploaded_at,
+            updatedAt: r.uploaded_at,
+            uploadedBy: r.uploaded_by,
+        }));
+        return NextResponse.json({ templates });
     } catch (error) {
         console.error('[word-templates GET] 错误:', error);
         return NextResponse.json({ error: '获取模板列表失败' }, { status: 500 });
@@ -86,26 +87,21 @@ export async function POST(request: NextRequest) {
         if (!file) {
             return NextResponse.json({ error: '未提供文件' }, { status: 400 });
         }
-
         if (!file.name.endsWith('.docx')) {
             return NextResponse.json({ error: '仅支持 .docx 格式' }, { status: 400 });
         }
-
-        // 限制 10MB
         if (file.size > 10 * 1024 * 1024) {
             return NextResponse.json({ error: '文件过大，最大支持 10MB' }, { status: 400 });
         }
 
-        // 确保目录存在
         await mkdir(WORD_DIR, { recursive: true });
 
-        // 文件内容
         const buffer = Buffer.from(await file.arrayBuffer());
         const templateId = uuidv4();
         const filePath = path.join(WORD_DIR, `${templateId}.docx`);
         await writeFile(filePath, buffer);
 
-        // 提取占位符（从 docx 转 HTML 再提取）
+        // 提取占位符
         let placeholders: string[] = [];
         let htmlContent = '';
         try {
@@ -123,7 +119,7 @@ export async function POST(request: NextRequest) {
             console.warn('[word-templates] 占位符提取失败，模板仍会保存:', parseErr);
         }
 
-        // 保存 HTML 缓存（用于报告生成时快速读取）
+        // 保存 HTML 缓存
         if (htmlContent) {
             await writeFile(
                 path.join(WORD_DIR, `${templateId}.html`),
@@ -132,27 +128,28 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 更新元数据
-        const metas = await readMetas();
-        const meta: WordTemplateMeta = {
+        // 写入 SQLite
+        const db = getDb();
+        const now = new Date().toISOString();
+        db.prepare(
+            `INSERT INTO word_templates (id, name, original_name, size, placeholders, uploaded_by, uploaded_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(templateId, file.name.replace('.docx', ''), file.name, file.size, JSON.stringify(placeholders), session.username, now);
+
+        const meta = {
             id: templateId,
             name: file.name.replace('.docx', ''),
             fileName: file.name,
             placeholders,
             fileSizeBytes: file.size,
-            uploadedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            uploadedAt: now,
+            updatedAt: now,
             uploadedBy: session.username,
         };
-        metas.push(meta);
-        await writeMetas(metas);
 
         console.log(`[word-templates] 上传成功: ${meta.name} (${placeholders.length} 个占位符), 操作者: ${session.username}`);
 
-        return NextResponse.json({
-            ok: true,
-            template: meta,
-        });
+        return NextResponse.json({ ok: true, template: meta });
     } catch (error) {
         console.error('[word-templates POST] 错误:', error);
         return NextResponse.json({ error: '上传失败: ' + String(error) }, { status: 500 });

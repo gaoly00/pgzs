@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, copyFile, stat } from 'fs/promises';
 import path from 'path';
 import { verifySession } from '@/lib/auth/session';
+import { getProject } from '@/lib/repositories/project-repo';
 
 // 路径常量
 const TEMPLATES_DIR = path.join(process.cwd(), 'data', 'templates');
@@ -11,8 +12,7 @@ const PROJECT_WORKBOOK_FILENAME = 'sales_comp.xlsx';
 
 /**
  * POST /api/projects/[id]/sales-comp/copy-template
- * 将母板模板复制到项目工作簿目录
- * 项目创建后自动调用
+ * 将母板模板复制到项目工作簿目录（租户隔离）
  */
 export async function POST(
     _request: NextRequest,
@@ -28,10 +28,15 @@ export async function POST(
     }
 
     try {
-        // 鉴权
         const session = await verifySession();
         if (!session) {
             return NextResponse.json({ ok: false, error: '未登录' }, { status: 401 });
+        }
+
+        // 租户隔离：验证项目归属
+        const project = getProject(session.tenantId, projectId);
+        if (!project) {
+            return NextResponse.json({ ok: false, error: '项目不存在' }, { status: 404 });
         }
 
         const templatePath = path.join(TEMPLATES_DIR, TEMPLATE_FILENAME);
@@ -47,8 +52,8 @@ export async function POST(
             });
         }
 
-        // 创建项目工作簿目录
-        const projectDir = path.join(PROJECTS_DIR, projectId);
+        // 创建项目工作簿目录（租户隔离路径）
+        const projectDir = path.join(PROJECTS_DIR, session.tenantId, projectId);
         await mkdir(projectDir, { recursive: true });
 
         // 复制母板到项目目录
@@ -60,12 +65,11 @@ export async function POST(
         return NextResponse.json({
             ok: true,
             message: '工作簿副本创建成功',
-            path: workbookPath,
         });
     } catch (error) {
         console.error('[模板复制] 错误:', error);
         return NextResponse.json(
-            { ok: false, error: '复制模板失败: ' + String(error) },
+            { ok: false, error: '复制模板失败' },
             { status: 500 }
         );
     }

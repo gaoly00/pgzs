@@ -3,7 +3,9 @@
     "allow": [
       "Bash(cd /c/Users/dell/Desktop/SmartVal && git push origin main 2>&1)",
       "mcp__ide__getDiagnostics",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)"
     ]
   }
 }

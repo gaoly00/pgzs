@@ -2,19 +2,13 @@
  * POST /api/projects/[id]/report/snapshot
  *
  * 创建报告快照 — 锁定当前 extractedMetrics 并返回 snapshotId。
- * 前端将 extractedMetrics + projectName 作为 JSON body 传入，
- * 因为数据目前存储在客户端 Zustand store 中。
- *
- * Request Body:
- *   { extractedMetrics: Record<string, string|number|null>, projectName?: string }
- *
- * Response:
- *   { snapshotId: string }
+ * 包含租户隔离校验。
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createSnapshot } from '@/lib/snapshot-store';
 import { verifySession } from '@/lib/auth/session';
+import { getProject } from '@/lib/repositories/project-repo';
 
 export async function POST(
     request: NextRequest,
@@ -23,10 +17,15 @@ export async function POST(
     const { id: projectId } = await params;
 
     try {
-        // 鉴权
         const session = await verifySession();
         if (!session) {
             return NextResponse.json({ error: '未登录' }, { status: 401 });
+        }
+
+        // 租户隔离：验证项目归属
+        const project = getProject(session.tenantId, projectId);
+        if (!project) {
+            return NextResponse.json({ error: '项目不存在' }, { status: 404 });
         }
 
         const body = await request.json();
@@ -41,7 +40,7 @@ export async function POST(
 
         const snapshot = createSnapshot(
             projectId,
-            projectName || 'Untitled Project',
+            projectName || project.name,
             extractedMetrics,
         );
 
