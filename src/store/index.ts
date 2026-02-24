@@ -185,6 +185,7 @@ export const useSmartValStore = create<SmartValState>()(
                 const now = new Date().toISOString();
                 const newProject: Project = {
                     id,
+                    tenantId: '',
                     name: data.name,
                     projectNumber: data.projectNumber,
                     projectType: data.projectType ?? 'real-estate',
@@ -206,6 +207,7 @@ export const useSmartValStore = create<SmartValState>()(
                     salesResult: { unitPrice: null, totalValue: null },
                     extractedMetrics: {},
                     customFields: [],
+                    createdBy: get().currentUserId ?? '',
                     status: {
                         isDirty: false,
                         reportGeneratedAt: null,
@@ -303,7 +305,7 @@ export const useSmartValStore = create<SmartValState>()(
                         setDirty({
                             ...p,
                             salesCompCases: [
-                                ...p.salesCompCases,
+                                ...(p.salesCompCases ?? []),
                                 {
                                     id: generateId(),
                                     caseName: '',
@@ -324,7 +326,7 @@ export const useSmartValStore = create<SmartValState>()(
                     projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
-                            salesCompCases: p.salesCompCases.map((c) =>
+                            salesCompCases: (p.salesCompCases ?? []).map((c) =>
                                 c.id === caseId ? { ...c, ...patch } : c,
                             ),
                         }),
@@ -337,7 +339,7 @@ export const useSmartValStore = create<SmartValState>()(
                     projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
-                            salesCompCases: p.salesCompCases.filter((c) => c.id !== caseId),
+                            salesCompCases: (p.salesCompCases ?? []).filter((c) => c.id !== caseId),
                         }),
                     ),
                 }));
@@ -461,7 +463,7 @@ export const useSmartValStore = create<SmartValState>()(
                         setDirty({
                             ...p,
                             costItems: [
-                                ...p.costItems,
+                                ...(p.costItems ?? []),
                                 { id: generateId(), name: '', amount: null },
                             ],
                         }),
@@ -474,7 +476,7 @@ export const useSmartValStore = create<SmartValState>()(
                     projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
-                            costItems: p.costItems.map((item) =>
+                            costItems: (p.costItems ?? []).map((item) =>
                                 item.id === itemId ? { ...item, ...patch } : item,
                             ),
                         }),
@@ -487,7 +489,7 @@ export const useSmartValStore = create<SmartValState>()(
                     projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
-                            costItems: p.costItems.filter((item) => item.id !== itemId),
+                            costItems: (p.costItems ?? []).filter((item) => item.id !== itemId),
                         }),
                     ),
                 }));
@@ -499,7 +501,7 @@ export const useSmartValStore = create<SmartValState>()(
                     projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
-                            conclusion: { ...p.conclusion, ...patch },
+                            conclusion: { ...(p.conclusion ?? { selectedMethod: 'salesComp' as const, manualUnitPrice: null, manualReason: '' }), ...patch },
                         }),
                     ),
                 }));

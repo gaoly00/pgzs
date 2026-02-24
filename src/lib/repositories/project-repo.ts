@@ -5,31 +5,12 @@
  */
 
 import { getDb } from '@/lib/db/index';
+import type { SharedProject } from '@/types/shared';
 
-export interface ServerProject {
-    id: string;
-    tenantId: string;
-    name: string;
-    projectNumber?: string;
-    projectType: 'real-estate' | 'land';
-    valuationDate: string;
-    propertyType: string;
-    gfa: number | null;
-    address: string;
-    valuationMethods: string[];
-    salesAnchors: Record<string, any>;
-    salesResult: { unitPrice: number | null; totalValue: number | null };
-    extractedMetrics: Record<string, string | number | null>;
-    customFields: Array<{ key: string; label: string; valueType: string; unit?: string }>;
-    templateId?: string;
-    reportContent?: string;
-    status: { isDirty: boolean; reportGeneratedAt: string | null };
-    createdBy: string;
-    createdAt: string;
-    updatedAt: string;
-}
+// 向后兼容：ServerProject 即 SharedProject
+export type ServerProject = SharedProject;
 
-function rowToProject(r: any): ServerProject {
+function rowToProject(r: any): SharedProject {
     return {
         id: r.id,
         tenantId: r.tenant_id,

@@ -36,7 +36,7 @@ export function calcSalesCompTotalValue(cases: SalesCompCase[], gfa: number | nu
 
 /** Total Cost = Σ(amounts) */
 export function calcCostTotal(project: Project): number {
-    return project.costItems.reduce((sum, item) => sum + n(item.amount), 0);
+    return (project.costItems ?? []).reduce((sum, item) => sum + n(item.amount), 0);
 }
 
 /** Cost Unit Price = Total Cost / GFA */
@@ -56,38 +56,38 @@ export function calcCostTotalValue(project: Project): number {
 // ============================================================
 
 export function calcFinalUnitPrice(project: Project): number {
-    switch (project.conclusion.selectedMethod) {
+    const conclusion = project.conclusion ?? { selectedMethod: 'salesComp' as const, manualUnitPrice: null, manualReason: '' };
+    switch (conclusion.selectedMethod) {
         case 'salesComp': {
-            // Prefer FortuneSheet extracted result
             const sr = (project as any).salesResult;
             if (sr && sr.unitPrice !== null && sr.unitPrice !== undefined) {
                 return sr.unitPrice;
             }
-            return calcSalesCompUnitPrice(project.salesCompCases);
+            return calcSalesCompUnitPrice(project.salesCompCases ?? []);
         }
         case 'cost':
             return calcCostUnitPrice(project);
         case 'manual':
-            return n(project.conclusion.manualUnitPrice);
+            return n(conclusion.manualUnitPrice);
         default:
             return 0;
     }
 }
 
 export function calcFinalTotalValue(project: Project): number {
-    switch (project.conclusion.selectedMethod) {
+    const conclusion = project.conclusion ?? { selectedMethod: 'salesComp' as const, manualUnitPrice: null, manualReason: '' };
+    switch (conclusion.selectedMethod) {
         case 'salesComp': {
-            // Prefer FortuneSheet extracted result
             const sr = (project as any).salesResult;
             if (sr && sr.totalValue !== null && sr.totalValue !== undefined) {
                 return sr.totalValue;
             }
-            return calcSalesCompTotalValue(project.salesCompCases, project.gfa);
+            return calcSalesCompTotalValue(project.salesCompCases ?? [], project.gfa);
         }
         case 'cost':
             return calcCostTotalValue(project);
         case 'manual':
-            return n(project.conclusion.manualUnitPrice) * n(project.gfa);
+            return n(conclusion.manualUnitPrice) * n(project.gfa);
         default:
             return 0;
     }

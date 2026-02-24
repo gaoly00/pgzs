@@ -5,7 +5,9 @@
       "mcp__ide__getDiagnostics",
       "Bash(cd:*)",
       "Bash(head:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(grep Type error:*)",
+      "Bash(grep:*)"
     ]
   }
 }

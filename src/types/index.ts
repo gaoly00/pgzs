@@ -2,6 +2,9 @@
 // SmartVal — Core Data Types
 // ============================================================
 
+import type { SharedProject } from './shared';
+export type { SharedProject } from './shared';
+
 export type ProjectValuationType = 'real-estate' | 'land';
 
 /** 估价方法 Key */
@@ -136,45 +139,19 @@ export interface ReportTemplate {
   updatedAt: string;
 }
 
-/** 项目 */
-export interface Project {
-  id: string;
-  name: string;
-  projectNumber?: string;
-  projectType: ProjectValuationType; // 新增项目类型
-
-  valuationDate: string;
-  propertyType: string;
-  gfa: number | null;          // 建筑面积 Gross Floor Area
-  address: string;
-
-  // 启用的估价方法（仅控制 UI 可见性，不删除数据）
+/** 项目 — 前端扩展类型，继承共享的数据库结构 */
+export interface Project extends SharedProject {
+  // 覆盖为更严格的前端类型
   valuationMethods: ValuationMethodKey[];
-
-  // Legacy module data (kept for migration; do NOT remove)
-  salesCompCases: SalesCompCase[];
-  costItems: CostItem[];
-  conclusion: Conclusion;
-
-  // FortuneSheet Hybrid Storage (new)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  salesSheetData: any | null;           // Full sheet blob for UI restoration (Legacy: Sales Comp)
-  sheetData: Record<string, any>;       // New: Isolated storage for all sheet types (keyed by sheetType)
-  salesAnchors: SalesAnchors;           // Dynamic anchor coordinates
-  salesResult: SalesResult;             // Extracted numeric results (Legacy, keep for existing)
-  extractedMetrics: Record<string, string | number | null>; // New: Generic extracted results
-  customFields: CustomFieldDef[];       // New: User-defined fields
-
-  // Word 模板关联
-  templateId?: string;                   // 绑定的全局模板 ID
-
-  // 报告内容（富文本 HTML）
-  reportContent?: string;
-
-  // 状态
-  status: ProjectStatus;
-  createdAt: string;
-  updatedAt: string;
+  salesAnchors: SalesAnchors;
+  salesResult: SalesResult;
+  customFields: CustomFieldDef[];
+  // 前端专属字段（可选，不存在于数据库）
+  salesCompCases?: SalesCompCase[];
+  costItems?: CostItem[];
+  conclusion?: Conclusion;
+  salesSheetData?: any | null;
+  sheetData?: Record<string, any>;
 }
 
 /** 创建项目的输入 */
