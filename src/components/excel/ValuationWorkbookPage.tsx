@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Save, TableProperties, Loader2, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { FieldManagerDrawer } from './FieldManagerDrawer';
 import { toast } from 'sonner';
-import { saveValuationSheet, getValuationSheet } from '@/app/actions/valuation';
+// 工作簿读写已迁移到 API（带鉴权 + 租户隔离），不再使用无鉴权的 Server Action
+// import { saveValuationSheet, getValuationSheet } from '@/app/actions/valuation';
 import { readAllSheets, captureSelection } from '@/lib/fortune-api';
 import { rcToA1 } from '@/lib/excel-coords';
 import { ensureWorkbookData } from '@/lib/fortune-template';
@@ -164,18 +165,23 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             if (!projectId) return;
             try {
                 console.log(`[ValuationWorkbook] 正在加载 project=${projectId}, method=${method} 的数据...`);
-                // 服务器层隔离：按 method 精准请求
-                const response = await getValuationSheet(projectId, method);
+                // 通过鉴权 API 获取数据（带租户隔离）
+                const res = await fetch(`/api/projects/${projectId}/sheets/${method}`);
+                if (!res.ok) {
+                    console.warn(`[ValuationWorkbook] API 返回 ${res.status}`);
+                    return;
+                }
+                const result = await res.json();
 
                 if (active) {
-                    if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+                    if (result.data && Array.isArray(result.data) && result.data.length > 0) {
                         console.log(`[ValuationWorkbook] 成功恢复 ${method} 的服务器数据`);
 
                         // Store 层隔离：写入 sheetData[method]
-                        updateSheetData(projectId, method, response.data);
+                        updateSheetData(projectId, method, result.data);
 
                         // 渲染更新 & 强制重新挂载
-                        setServerSheet(response.data);
+                        setServerSheet(result.data);
                         setWorkbookKey(k => k + 1);
                     } else {
                         console.log(`[ValuationWorkbook] ${method} 无服务器数据，使用默认空表`);
@@ -359,11 +365,16 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             extractMetricsFromData(projectId, toSave);
             setServerSheet(toSave);
 
-            // 服务器层隔离：文件名 {projectId}_{method}.json
-            const saveResult = await saveValuationSheet(projectId, method, toSave);
+            // 通过鉴权 API 保存（带租户隔离）
+            const saveRes = await fetch(`/api/projects/${projectId}/sheets/${method}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: toSave }),
+            });
 
-            if (!saveResult.success) {
-                throw new Error("服务器写入失败: " + saveResult.error);
+            if (!saveRes.ok) {
+                const err = await saveRes.json().catch(() => ({}));
+                throw new Error(err.error || `服务器返回 ${saveRes.status}`);
             }
 
             toast.success(`${method} 数据已保存至数据库`);

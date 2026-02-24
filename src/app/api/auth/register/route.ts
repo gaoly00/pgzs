@@ -1,6 +1,6 @@
 /**
  * POST /api/auth/register
- * 用户注册
+ * 用户注册（含速率限制）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,9 +9,35 @@ import { validateUsername, validatePassword } from '@/lib/auth/validators';
 import { findUserByUsername, createUser } from '@/lib/auth/store';
 import { hashPassword } from '@/lib/auth/password';
 import { createUserSession } from '@/lib/auth/session';
+import { ensureTenantExists } from '@/lib/repositories/tenant-repo';
+import { checkRateLimit } from '@/lib/auth/rate-limiter';
+
+/** 从请求中提取客户端 IP */
+function getClientIp(request: NextRequest): string {
+    return (
+        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        request.headers.get('x-real-ip') ||
+        'unknown'
+    );
+}
 
 export async function POST(request: NextRequest) {
     try {
+        const clientIp = getClientIp(request);
+
+        // IP 级速率限制：每小时最多 5 次注册
+        const rateResult = checkRateLimit(`register:${clientIp}`, 5, 3600_000);
+        if (!rateResult.allowed) {
+            const retryAfterSec = Math.ceil(rateResult.retryAfterMs / 1000);
+            return NextResponse.json(
+                { error: `注册请求过于频繁，请稍后重试` },
+                {
+                    status: 429,
+                    headers: { 'Retry-After': String(retryAfterSec) },
+                },
+            );
+        }
+
         const body = await request.json();
         const { username, password } = body;
 
@@ -34,8 +60,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: '该用户名已被注册' }, { status: 409 });
         }
 
-        // 创建用户（用户名 'admin' 自动获得管理员角色）
-        // 每个新注册用户获得独立 tenantId，管理员后续可合并
+        // 创建用户
         const passwordHash = await hashPassword(password);
         const userId = uuidv4();
         const tenantId = `tenant_${uuidv4().slice(0, 8)}`;
@@ -48,6 +73,9 @@ export async function POST(request: NextRequest) {
             tenantId,
             createdAt: new Date().toISOString(),
         });
+
+        // 确保租户记录存在
+        ensureTenantExists(tenantId, `${normalized}的租户`);
 
         // 创建会话
         await createUserSession(userId);

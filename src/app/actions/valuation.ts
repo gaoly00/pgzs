@@ -1,5 +1,18 @@
 'use server';
 
+/**
+ * @deprecated 该文件已废弃！
+ *
+ * 工作簿读写已迁移到 /api/projects/[id]/sheets/[method] API，
+ * 前端通过 fetch 调用，带有 verifySession 鉴权和 tenantId 租户隔离。
+ *
+ * 旧的 Server Action 没有任何鉴权，存在安全漏洞。
+ * 请勿在新代码中引用此文件。
+ *
+ * 保留此文件仅用于向后兼容迁移期间可能的回退。
+ * 计划于下一个版本彻底删除。
+ */
+
 import { mkdir, writeFile, readFile, readdir } from 'fs/promises';
 import path from 'path';
 import { unstable_noStore as noStore } from 'next/cache';

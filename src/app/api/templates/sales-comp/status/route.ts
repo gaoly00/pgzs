@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { stat } from 'fs/promises';
 import path from 'path';
+import { verifySession } from '@/lib/auth/session';
 
 // 母板模板存储路径
 const TEMPLATES_DIR = path.join(process.cwd(), 'data', 'templates');
@@ -12,6 +13,12 @@ const TEMPLATE_FILENAME = 'sales_comp_template.xlsx';
  */
 export async function GET() {
     try {
+        // 鉴权
+        const session = await verifySession();
+        if (!session) {
+            return NextResponse.json({ error: '未登录' }, { status: 401 });
+        }
+
         const filePath = path.join(TEMPLATES_DIR, TEMPLATE_FILENAME);
         const fileStat = await stat(filePath);
 

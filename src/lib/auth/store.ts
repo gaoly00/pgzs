@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { ensureTenantExists } from '@/lib/repositories/tenant-repo';
 
 // ============================================================
 // 类型定义
@@ -58,11 +59,15 @@ export function readUsers(): UserRecord[] {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
         const users = JSON.parse(raw) as UserRecord[];
         // 旧数据迁移：补充 role 和 tenantId
-        return users.map((u) => ({
-            ...u,
-            role: u.role || (u.username === 'admin' ? 'admin' : 'valuer'),
-            tenantId: u.tenantId || `tenant_${u.id.slice(0, 8)}`,
-        }));
+        return users.map((u) => {
+            const role = u.role || (u.username === 'admin' ? 'admin' : 'valuer');
+            const tenantId = u.tenantId || `tenant_${u.id.slice(0, 8)}`;
+
+            // 向下兼容：自动生成对应的公司/实体模型 
+            ensureTenantExists(tenantId, `${u.username}的租户`);
+
+            return { ...u, role, tenantId };
+        });
     } catch {
         return [];
     }
