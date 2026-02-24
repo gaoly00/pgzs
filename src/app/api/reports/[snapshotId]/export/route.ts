@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSnapshot, type ReportSnapshot } from '@/lib/snapshot-store';
 import { STANDARD_FIELDS } from '@/lib/valuation-schema';
+import { verifySession } from '@/lib/auth/session';
 import {
     Document,
     Packer,
@@ -340,6 +341,12 @@ export async function POST(
     { params }: { params: Promise<{ snapshotId: string }> },
 ) {
     const { snapshotId } = await params;
+
+    // 鉴权
+    const session = await verifySession();
+    if (!session) {
+        return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
 
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') ?? 'pdf';

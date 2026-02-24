@@ -24,10 +24,6 @@ import {
     Info,
 } from 'lucide-react';
 import { RequireRole, useCurrentUser, type UserRole } from '@/components/auth/require-role';
-import { useSmartValStore } from '@/store';
-import { generateId } from '@/lib/id';
-import { fileToBase64, docxBase64ToHtml, extractPlaceholders } from '@/lib/template-engine';
-import type { ReportTemplate } from '@/types';
 
 // Excel 模板状态
 interface ExcelTemplateStatus {
@@ -109,12 +105,41 @@ function TemplateManagementContent() {
     };
 
     // ============================================================
-    // Word 模板
+    // Word 模板（通过服务端 API 管理）
     // ============================================================
-    const wordTemplates = useSmartValStore((s) => s.reportTemplates);
-    const addTemplate = useSmartValStore((s) => s.addTemplate);
-    const deleteTemplate = useSmartValStore((s) => s.deleteTemplate);
+    interface WordTemplateMeta {
+        id: string;
+        name: string;
+        fileName: string;
+        placeholders: string[];
+        fileSizeBytes: number;
+        uploadedAt: string;
+        updatedAt: string;
+        uploadedBy: string;
+    }
+
+    const [wordTemplates, setWordTemplates] = useState<WordTemplateMeta[]>([]);
+    const [wordLoading, setWordLoading] = useState(true);
     const [wordUploading, setWordUploading] = useState(false);
+
+    const fetchWordTemplates = useCallback(async () => {
+        setWordLoading(true);
+        try {
+            const res = await fetch('/api/templates/word');
+            if (res.ok) {
+                const data = await res.json();
+                setWordTemplates(data.templates || []);
+            }
+        } catch {
+            // 静默
+        } finally {
+            setWordLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchWordTemplates();
+    }, [fetchWordTemplates]);
 
     const handleWordUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!userCanUpload) {
@@ -129,22 +154,19 @@ function TemplateManagementContent() {
         }
         setWordUploading(true);
         try {
-            const base64 = await fileToBase64(file);
-            const { html } = await docxBase64ToHtml(base64);
-            const placeholders = extractPlaceholders(html);
-
-            const template: ReportTemplate = {
-                id: generateId(),
-                name: file.name.replace('.docx', ''),
-                fileName: file.name,
-                docxBase64: base64,
-                htmlContent: html,
-                placeholders,
-                uploadedAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-            addTemplate(template);
-            toast.success(`Word 模板「${template.name}」上传成功，发现 ${placeholders.length} 个占位符`);
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch('/api/templates/word', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+                toast.success(`Word 模板「${data.template.name}」上传成功，发现 ${data.template.placeholders.length} 个占位符`);
+                fetchWordTemplates();
+            } else {
+                toast.error(data.error || '上传失败');
+            }
         } catch (err) {
             console.error('Word 模板上传失败:', err);
             toast.error('模板上传失败，请确认文件格式正确');
@@ -152,16 +174,26 @@ function TemplateManagementContent() {
             setWordUploading(false);
             e.target.value = '';
         }
-    }, [addTemplate, userCanUpload]);
+    }, [userCanUpload, fetchWordTemplates]);
 
-    const handleDeleteWord = useCallback((templateId: string) => {
+    const handleDeleteWord = useCallback(async (templateId: string) => {
         if (!userCanUpload) {
             toast.error('权限不足：仅管理员可删除模板');
             return;
         }
-        deleteTemplate(templateId);
-        toast.success('Word 模板已删除');
-    }, [deleteTemplate, userCanUpload]);
+        try {
+            const res = await fetch(`/api/templates/word/${templateId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+                toast.success(data.message || 'Word 模板已删除');
+                fetchWordTemplates();
+            } else {
+                toast.error(data.error || '删除失败');
+            }
+        } catch {
+            toast.error('网络错误');
+        }
+    }, [userCanUpload, fetchWordTemplates]);
 
     // 辅助格式化
     const formatSize = (bytes: number) => {

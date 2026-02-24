@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createSnapshot } from '@/lib/snapshot-store';
+import { verifySession } from '@/lib/auth/session';
 
 export async function POST(
     request: NextRequest,
@@ -22,6 +23,12 @@ export async function POST(
     const { id: projectId } = await params;
 
     try {
+        // 鉴权
+        const session = await verifySession();
+        if (!session) {
+            return NextResponse.json({ error: '未登录' }, { status: 401 });
+        }
+
         const body = await request.json();
         const { extractedMetrics, projectName } = body;
 

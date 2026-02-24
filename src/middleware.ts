@@ -10,10 +10,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // 受保护路径前缀
-const PROTECTED_PREFIXES = ['/projects', '/settings'];
+const PROTECTED_PREFIXES = ['/projects', '/settings', '/admin'];
 
 // 公开路径（不需要认证）
-const PUBLIC_PATHS = ['/login', '/register', '/api/auth', '/forgot-password', '/admin'];
+const PUBLIC_PATHS = ['/login', '/register', '/api/auth', '/forgot-password'];
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;

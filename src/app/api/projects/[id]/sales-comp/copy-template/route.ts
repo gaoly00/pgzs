@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, copyFile, stat } from 'fs/promises';
 import path from 'path';
+import { verifySession } from '@/lib/auth/session';
 
 // 路径常量
 const TEMPLATES_DIR = path.join(process.cwd(), 'data', 'templates');
@@ -27,6 +28,12 @@ export async function POST(
     }
 
     try {
+        // 鉴权
+        const session = await verifySession();
+        if (!session) {
+            return NextResponse.json({ ok: false, error: '未登录' }, { status: 401 });
+        }
+
         const templatePath = path.join(TEMPLATES_DIR, TEMPLATE_FILENAME);
 
         // 检查母板模板是否存在

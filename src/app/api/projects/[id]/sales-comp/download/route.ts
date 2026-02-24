@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
+import { verifySession } from '@/lib/auth/session';
 
 // 路径常量
 const PROJECTS_DIR = path.join(process.cwd(), 'data', 'projects');
@@ -25,6 +26,12 @@ export async function GET(
     }
 
     try {
+        // 鉴权
+        const session = await verifySession();
+        if (!session) {
+            return NextResponse.json({ error: '未登录' }, { status: 401 });
+        }
+
         const workbookPath = path.join(PROJECTS_DIR, projectId, PROJECT_WORKBOOK_FILENAME);
 
         // 检查文件是否存在
