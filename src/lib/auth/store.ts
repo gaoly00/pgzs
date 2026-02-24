@@ -20,6 +20,7 @@ export interface UserRecord {
     username: string;       // 存储为小写
     passwordHash: string;
     role: UserRole;         // 用户角色
+    tenantId: string;       // 所属公司/租户
     createdAt: string;      // ISO 8601
 }
 
@@ -56,10 +57,11 @@ export function readUsers(): UserRecord[] {
     try {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
         const users = JSON.parse(raw) as UserRecord[];
-        // 旧数据没有 role 字段，做迁移补充
+        // 旧数据迁移：补充 role 和 tenantId
         return users.map((u) => ({
             ...u,
             role: u.role || (u.username === 'admin' ? 'admin' : 'valuer'),
+            tenantId: u.tenantId || `tenant_${u.id.slice(0, 8)}`,
         }));
     } catch {
         return [];

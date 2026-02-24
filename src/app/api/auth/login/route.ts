@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             userId: user.id,
             username: user.username,
+            role: user.role,
+            tenantId: user.tenantId,
             message: '登录成功',
         });
     } catch (error) {

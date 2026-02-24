@@ -35,14 +35,17 @@ export async function POST(request: NextRequest) {
         }
 
         // 创建用户（用户名 'admin' 自动获得管理员角色）
+        // 每个新注册用户获得独立 tenantId，管理员后续可合并
         const passwordHash = await hashPassword(password);
         const userId = uuidv4();
+        const tenantId = `tenant_${uuidv4().slice(0, 8)}`;
         const role = normalized === 'admin' ? 'admin' : 'valuer';
         createUser({
             id: userId,
             username: normalized,
             passwordHash,
             role: role as any,
+            tenantId,
             createdAt: new Date().toISOString(),
         });
 

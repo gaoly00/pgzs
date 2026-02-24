@@ -16,6 +16,7 @@ export async function GET() {
             userId: user.userId,
             username: user.username,
             role: user.role,
+            tenantId: user.tenantId,
         });
     } catch (error) {
         console.error('[me] 获取用户信息失败:', error);
