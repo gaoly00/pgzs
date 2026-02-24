@@ -10,7 +10,7 @@ import { formatCurrency } from '@/lib/format';
 
 export default function ProjectsPage() {
     const projects = useSmartValStore((s) => s.projects);
-    const deleteProject = useSmartValStore((s) => s.deleteProject);
+    const deleteProjectViaAPI = useSmartValStore((s) => s.deleteProjectViaAPI);
 
     return (
         <div className="space-y-8">
@@ -78,7 +78,7 @@ export default function ProjectsPage() {
                                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                                             onClick={() => {
                                                 if (confirm('确定要删除此项目吗？')) {
-                                                    deleteProject(project.id);
+                                                    deleteProjectViaAPI(project.id);
                                                 }
                                             }}
                                         >

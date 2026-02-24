@@ -21,7 +21,7 @@ import { ProjectValuationType, VALUATION_METHODS_CONFIG, ValuationMethodKey } fr
 
 export default function NewProjectPage() {
     const router = useRouter();
-    const createProject = useSmartValStore((s) => s.createProject);
+    const createProjectViaAPI = useSmartValStore((s) => s.createProjectViaAPI);
 
     const [name, setName] = useState('');
     const [projectNumber, setProjectNumber] = useState('');
@@ -51,11 +51,11 @@ export default function NewProjectPage() {
         e.preventDefault();
         if (!name.trim()) return;
 
-        const id = createProject({
+        const id = await createProjectViaAPI({
             name: name.trim(),
             projectNumber: projectNumber.trim(),
             projectType,
-            valuationMethods: selectedMethods // Use selected checkboxes
+            valuationMethods: selectedMethods
         });
 
         // 异步复制母板模板到项目目录（不阻断项目创建流程）

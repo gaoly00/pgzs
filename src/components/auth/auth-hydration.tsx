@@ -4,11 +4,15 @@ import { useEffect, useState } from 'react';
 import { useSmartValStore } from '@/store';
 
 /**
- * 认证水合组件 — 在 dashboard 加载时获取当前用户并同步到 store
+ * 认证水合组件 — 在 dashboard 加载时：
+ * 1. 水合 zustand persist store（恢复 currentUserId）
+ * 2. 从 /api/auth/me 获取当前用户
+ * 3. 从 /api/projects 加载项目列表（服务端权威源）
  */
 export function AuthHydration({ children }: { children: React.ReactNode }) {
     const [ready, setReady] = useState(false);
     const setCurrentUser = useSmartValStore((s) => s.setCurrentUser);
+    const loadProjectsFromServer = useSmartValStore((s) => s.loadProjectsFromServer);
 
     useEffect(() => {
         // 先水合 zustand persist store
@@ -18,12 +22,13 @@ export function AuthHydration({ children }: { children: React.ReactNode }) {
         fetch('/api/auth/me')
             .then((res) => {
                 if (res.ok) return res.json();
-                // 未登录 — middleware 会处理重定向
                 return null;
             })
-            .then((data) => {
+            .then(async (data) => {
                 if (data?.userId) {
                     setCurrentUser(data.userId);
+                    // 从服务端加载项目列表
+                    await loadProjectsFromServer();
                 }
             })
             .catch(() => {
@@ -32,7 +37,7 @@ export function AuthHydration({ children }: { children: React.ReactNode }) {
             .finally(() => {
                 setReady(true);
             });
-    }, [setCurrentUser]);
+    }, [setCurrentUser, loadProjectsFromServer]);
 
     if (!ready) {
         return (

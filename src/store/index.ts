@@ -9,7 +9,6 @@ import type {
     ValuationMethodKey,
     SalesAnchor,
     CustomFieldDef,
-    ReportTemplate,
 } from '@/types';
 import { DEFAULT_COST_ITEM_NAMES } from '@/types';
 import { generateId } from '@/lib/id';
@@ -23,18 +22,26 @@ import { STANDARD_FIELDS } from '@/lib/valuation-schema';
 interface SmartValState {
     // 用户命名空间
     currentUserId: string | null;
-    projectsByUser: Record<string, Project[]>;
 
-    // 派生属性：当前用户的项目列表
+    // 项目列表（从 API 加载，不再持久化到 localStorage）
     projects: Project[];
+
+    // 兼容：旧的 projectsByUser 仅用于数据迁移
+    projectsByUser: Record<string, Project[]>;
 
     // 用户管理
     setCurrentUser: (userId: string) => void;
     logoutUser: () => void;
 
+    // ---- 服务端同步 ----
+    loadProjectsFromServer: () => Promise<void>;
+    syncProjectToServer: (projectId: string) => Promise<void>;
+
     // ---- Actions ----
     createProject: (data: CreateProjectInput) => string;
+    createProjectViaAPI: (data: CreateProjectInput) => Promise<string>;
     deleteProject: (id: string) => void;
+    deleteProjectViaAPI: (id: string) => Promise<boolean>;
     updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'projectNumber' | 'projectType' | 'valuationDate' | 'propertyType' | 'gfa' | 'address'>>) => void;
     updateValuationMethods: (projectId: string, methods: ValuationMethodKey[]) => void;
 
@@ -72,11 +79,13 @@ interface SmartValState {
     saveReportContent: (projectId: string, htmlContent: string) => void;
     generateReport: (projectId: string) => void;
 
-    // Word 模板管理
-    reportTemplates: ReportTemplate[];
-    addTemplate: (template: ReportTemplate) => void;
-    deleteTemplate: (templateId: string) => void;
+    // Word 模板关联
     updateProjectTemplate: (projectId: string, templateId: string | undefined) => void;
+
+    // 已弃用：Word 模板已迁移到服务端 API
+    reportTemplates: any[];
+    addTemplate: (template: any) => void;
+    deleteTemplate: (templateId: string) => void;
 }
 
 // ============================================================
@@ -119,23 +128,6 @@ function updateProjectInList(
     return projects.map((p) => (p.id === projectId ? updater(p) : p));
 }
 
-/** 获取当前用户的项目列表 */
-function getUserProjects(state: SmartValState): Project[] {
-    const uid = state.currentUserId;
-    if (!uid) return [];
-    return state.projectsByUser[uid] ?? [];
-}
-
-/** 生成更新当前用户项目列表的 partial state */
-function setUserProjects(state: SmartValState, projects: Project[]): Partial<SmartValState> {
-    const uid = state.currentUserId;
-    if (!uid) return {};
-    return {
-        projectsByUser: { ...state.projectsByUser, [uid]: projects },
-        projects, // 同步派生属性
-    };
-}
-
 // ============================================================
 // Store
 // ============================================================
@@ -151,7 +143,8 @@ export const useSmartValStore = create<SmartValState>()(
             setCurrentUser: (userId: string) => {
                 set((state) => ({
                     currentUserId: userId,
-                    projects: state.projectsByUser[userId] ?? [],
+                    // 尝试从旧数据恢复（兼容迁移期）
+                    projects: state.projects.length > 0 ? state.projects : (state.projectsByUser[userId] ?? []),
                 }));
             },
 
@@ -159,7 +152,40 @@ export const useSmartValStore = create<SmartValState>()(
                 set({ currentUserId: null, projects: [] });
             },
 
-            // ---- Create Project ----
+            // ============================================================
+            // 服务端同步
+            // ============================================================
+
+            loadProjectsFromServer: async () => {
+                try {
+                    const res = await fetch('/api/projects');
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    if (data.projects && Array.isArray(data.projects)) {
+                        // 服务端项目列表作为权威来源
+                        set({ projects: data.projects });
+                    }
+                } catch (err) {
+                    console.warn('[store] 从服务端加载项目失败，使用本地缓存:', err);
+                }
+            },
+
+            syncProjectToServer: async (projectId: string) => {
+                const project = get().projects.find(p => p.id === projectId);
+                if (!project) return;
+
+                try {
+                    await fetch(`/api/projects/${projectId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(project),
+                    });
+                } catch (err) {
+                    console.warn('[store] 同步项目到服务端失败:', err);
+                }
+            },
+
+            // ---- Create Project (本地版本，保持兼容) ----
             createProject: (data) => {
                 const id = generateId();
                 const now = new Date().toISOString();
@@ -193,45 +219,99 @@ export const useSmartValStore = create<SmartValState>()(
                     createdAt: now,
                     updatedAt: now,
                 };
-                set((state) => {
-                    const cur = getUserProjects(state);
-                    return setUserProjects(state, [...cur, newProject]);
-                });
+                set((state) => ({
+                    projects: [...state.projects, newProject],
+                }));
                 return id;
             },
 
-            // ---- Delete Project ----
+            // ---- Create Project (API 版本) ----
+            createProjectViaAPI: async (data) => {
+                try {
+                    const res = await fetch('/api/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
+                    });
+                    const result = await res.json();
+                    if (res.ok && result.project) {
+                        // 将服务端返回的项目补充前端需要的默认字段
+                        const serverProject = result.project;
+                        const fullProject: Project = {
+                            ...serverProject,
+                            salesCompCases: serverProject.salesCompCases ?? createDefaultSalesCompCases(),
+                            costItems: serverProject.costItems ?? createDefaultCostItems(),
+                            conclusion: serverProject.conclusion ?? {
+                                selectedMethod: 'salesComp',
+                                manualUnitPrice: null,
+                                manualReason: '',
+                            },
+                            salesSheetData: serverProject.salesSheetData ?? null,
+                            sheetData: serverProject.sheetData ?? {},
+                            salesAnchors: serverProject.salesAnchors ?? {},
+                            salesResult: serverProject.salesResult ?? { unitPrice: null, totalValue: null },
+                            extractedMetrics: serverProject.extractedMetrics ?? {},
+                            customFields: serverProject.customFields ?? [],
+                            status: serverProject.status ?? { isDirty: false, reportGeneratedAt: null },
+                        };
+                        set((state) => ({
+                            projects: [...state.projects, fullProject],
+                        }));
+                        return fullProject.id;
+                    }
+                    throw new Error(result.error || '创建失败');
+                } catch (err) {
+                    console.error('[store] API 创建项目失败，回退到本地:', err);
+                    // 回退到本地创建
+                    return get().createProject(data);
+                }
+            },
+
+            // ---- Delete Project (本地版本) ----
             deleteProject: (id) => {
-                set((state) => {
-                    const cur = getUserProjects(state).filter((p) => p.id !== id);
-                    return setUserProjects(state, cur);
-                });
+                set((state) => ({
+                    projects: state.projects.filter((p) => p.id !== id),
+                }));
+            },
+
+            // ---- Delete Project (API 版本) ----
+            deleteProjectViaAPI: async (id) => {
+                try {
+                    const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        set((state) => ({
+                            projects: state.projects.filter((p) => p.id !== id),
+                        }));
+                        return true;
+                    }
+                    return false;
+                } catch {
+                    return false;
+                }
             },
 
             // ---- Update Project ----
             updateProject: (id, patch) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), id, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, id, (p) =>
                         setDirty({ ...p, ...patch }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Valuation Methods ----
             updateValuationMethods: (projectId, methods) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({ ...p, valuationMethods: methods }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Sales Comp Cases (Legacy) ----
             addSalesCompCase: (projectId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: [
@@ -247,35 +327,32 @@ export const useSmartValStore = create<SmartValState>()(
                                 },
                             ],
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             updateSalesCompCase: (projectId, caseId, patch) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: p.salesCompCases.map((c) =>
                                 c.id === caseId ? { ...c, ...patch } : c,
                             ),
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             deleteSalesCompCase: (projectId, caseId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             salesCompCases: p.salesCompCases.filter((c) => c.id !== caseId),
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ============================================================
@@ -283,60 +360,55 @@ export const useSmartValStore = create<SmartValState>()(
             // ============================================================
 
             bindAnchor: (projectId, fieldKey, anchor) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors, [fieldKey]: anchor };
                         return setDirty({ ...p, salesAnchors: nextAnchors });
-                    });
-                    return setUserProjects(state, updated);
-                });
+                    }),
+                }));
             },
 
             unbindAnchor: (projectId, fieldKey) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors };
                         delete nextAnchors[fieldKey];
                         return setDirty({ ...p, salesAnchors: nextAnchors });
-                    });
-                    return setUserProjects(state, updated);
-                });
+                    }),
+                }));
             },
 
             updateSalesSheetData: (projectId, data) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({ ...p, salesSheetData: data }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             updateSheetData: (projectId, sheetType, data) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => {
                         const newSheets = { ...(p.sheetData || {}), [sheetType]: data };
                         return setDirty({ ...p, sheetData: newSheets });
-                    });
-                    return setUserProjects(state, updated);
-                });
+                    }),
+                }));
             },
 
             addCustomField: (projectId, field) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             customFields: [...(p.customFields || []), field],
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             removeCustomField: (projectId, fieldKey) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => {
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => {
                         const nextAnchors = { ...p.salesAnchors };
                         delete nextAnchors[fieldKey];
 
@@ -345,13 +417,12 @@ export const useSmartValStore = create<SmartValState>()(
                             customFields: (p.customFields || []).filter(f => f.key !== fieldKey),
                             salesAnchors: nextAnchors,
                         });
-                    });
-                    return setUserProjects(state, updated);
-                });
+                    }),
+                }));
             },
 
             extractMetricsFromData: (projectId, data) => {
-                const project = getUserProjects(get()).find(p => p.id === projectId);
+                const project = get().projects.find(p => p.id === projectId);
                 if (!project) return;
 
                 const anchors = project.salesAnchors || {};
@@ -384,22 +455,21 @@ export const useSmartValStore = create<SmartValState>()(
                     legacyResult.totalValue = typeof extracted['subject_value_total'] === 'number' ? extracted['subject_value_total'] : null;
                 }
 
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             extractedMetrics: extracted,
                             salesResult: legacyResult
                         })
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Cost Items ----
             addCostItem: (projectId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: [
@@ -407,110 +477,96 @@ export const useSmartValStore = create<SmartValState>()(
                                 { id: generateId(), name: '', amount: null },
                             ],
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             updateCostItem: (projectId, itemId, patch) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: p.costItems.map((item) =>
                                 item.id === itemId ? { ...item, ...patch } : item,
                             ),
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             deleteCostItem: (projectId, itemId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             costItems: p.costItems.filter((item) => item.id !== itemId),
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Conclusion ----
             updateConclusion: (projectId, patch) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({
                             ...p,
                             conclusion: { ...p.conclusion, ...patch },
                         }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Save Report Content ----
             saveReportContent: (projectId, htmlContent) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({ ...p, reportContent: htmlContent }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
 
             // ---- Generate Report ----
             generateReport: (projectId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) => ({
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) => ({
                         ...p,
                         status: {
                             isDirty: false,
                             reportGeneratedAt: new Date().toISOString(),
                         },
                         updatedAt: new Date().toISOString(),
-                    }));
-                    return setUserProjects(state, updated);
-                });
-            },
-
-            // ---- Word 模板管理 ----
-            addTemplate: (template) => {
-                set((state) => ({
-                    reportTemplates: [...state.reportTemplates, template],
+                    })),
                 }));
             },
 
-            deleteTemplate: (templateId) => {
-                set((state) => ({
-                    reportTemplates: state.reportTemplates.filter((t) => t.id !== templateId),
-                }));
+            // ---- Word 模板（已弃用，保持接口兼容） ----
+            addTemplate: () => {
+                console.warn('[store] addTemplate 已弃用，请使用 /api/templates/word API');
+            },
+            deleteTemplate: () => {
+                console.warn('[store] deleteTemplate 已弃用，请使用 /api/templates/word API');
             },
 
             updateProjectTemplate: (projectId, templateId) => {
-                set((state) => {
-                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                set((state) => ({
+                    projects: updateProjectInList(state.projects, projectId, (p) =>
                         setDirty({ ...p, templateId }),
-                    );
-                    return setUserProjects(state, updated);
-                });
+                    ),
+                }));
             },
         }),
         {
-            name: 'smartval.store.v2',
+            name: 'smartval.store.v3',
             storage: createJSONStorage(() => localStorage),
-            // 持久化用户 ID 和按用户隔离的项目数据
+            // 仅持久化 userId，项目数据从 API 加载
             partialize: (state) => ({
                 currentUserId: state.currentUserId,
-                projectsByUser: state.projectsByUser,
-                reportTemplates: state.reportTemplates,
             }),
-            // 水合时恢复派生的 projects
+            // 水合时只恢复 userId
             onRehydrateStorage: () => (state) => {
                 if (state && state.currentUserId) {
-                    state.projects = state.projectsByUser[state.currentUserId] ?? [];
+                    // 项目数据将由 AuthHydration 从 API 加载
                 }
             },
             skipHydration: true,
