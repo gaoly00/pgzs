@@ -101,98 +101,72 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 // ============================================================
-// 导出 Word（HTML → docx）
+// 导出 Word（通过服务端 API）
 // ============================================================
 
-/** 将 HTML 内容导出为 Word 文档并下载 */
-export async function exportToWord(htmlContent: string, fileName: string): Promise<void> {
-    // 动态导入 html-docx-js（仅客户端使用）
-    // @ts-expect-error — html-docx-js 无 TS 类型
-    const htmlDocx = await import('html-docx-js/dist/html-docx');
+/**
+ * 将编辑器 HTML 导出为 Word 文档并下载
+ * @param htmlContent 编辑器 HTML 内容
+ * @param fileName 文件名（不含扩展名）
+ * @param snapshotId 快照 ID（用于 API 路由）
+ */
+export async function exportToWord(htmlContent: string, fileName: string, snapshotId?: string): Promise<void> {
+    if (!snapshotId) {
+        throw new Error('需要 snapshotId 才能导出');
+    }
+
+    const res = await fetch(`/api/reports/${snapshotId}/export?format=docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: htmlContent }),
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '导出 Word 失败');
+    }
+
+    const blob = await res.blob();
     const { saveAs } = await import('file-saver');
-
-    // 包装完整 HTML 文档结构
-    const fullHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body {
-            font-family: "SimSun", "Noto Serif SC", serif;
-            font-size: 12pt;
-            line-height: 1.8;
-            color: #1a1a1a;
-        }
-        h1 { font-size: 22pt; font-weight: bold; text-align: center; }
-        h2 { font-size: 16pt; font-weight: bold; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
-        h3 { font-size: 14pt; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-        td, th { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
-        th { background: #f3f4f6; font-weight: 600; }
-    </style>
-</head>
-<body>
-    ${htmlContent}
-</body>
-</html>`;
-
-    const blob = htmlDocx.asBlob(fullHtml);
     saveAs(blob, fileName.endsWith('.docx') ? fileName : `${fileName}.docx`);
 }
 
 // ============================================================
-// 导出 PDF（HTML → PDF）
+// 导出 PDF（通过浏览器 window.print）
 // ============================================================
 
-/** 将 HTML 内容导出为 PDF 并下载 */
-export async function exportToPdf(htmlContent: string, fileName: string): Promise<void> {
-    // 动态导入 html2pdf.js（仅客户端使用）
-    const html2pdfModule = await import('html2pdf.js');
-    const html2pdf = html2pdfModule.default;
-
-    // 创建临时容器渲染 HTML
-    const container = document.createElement('div');
-    container.innerHTML = htmlContent;
-    container.style.cssText = `
-        font-family: "SimSun", "Noto Serif SC", serif;
-        font-size: 14px;
-        line-height: 1.8;
-        color: #1a1a1a;
-        padding: 20mm;
-        width: 170mm;
-    `;
-    document.body.appendChild(container);
-
-    try {
-        await html2pdf()
-            .set({
-                margin: [16, 16, 16, 16],
-                filename: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    letterRendering: true,
-                },
-                jsPDF: {
-                    unit: 'mm',
-                    format: 'a4',
-                    orientation: 'portrait',
-                },
-                pagebreak: {
-                    mode: ['avoid-all', 'css', 'legacy'],
-                    before: '.page-break-before',
-                    after: '.page-break-after',
-                    avoid: ['tr', 'td', 'img', 'h1', 'h2', 'h3'],
-                },
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any)
-            .from(container)
-            .save();
-    } finally {
-        document.body.removeChild(container);
+/**
+ * 将编辑器 HTML 导出为 PDF
+ * 通过服务端生成带打印样式的 HTML，然后用 window.print() 触发浏览器原生 PDF 打印
+ */
+export async function exportToPdf(htmlContent: string, fileName: string, snapshotId?: string): Promise<void> {
+    if (!snapshotId) {
+        throw new Error('需要 snapshotId 才能导出');
     }
+
+    const res = await fetch(`/api/reports/${snapshotId}/export?format=html-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: htmlContent }),
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '导出 PDF 失败');
+    }
+
+    const printHtml = await res.text();
+
+    // 在新窗口中打开并触发打印
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        throw new Error('无法打开打印窗口，请检查浏览器弹窗设置');
+    }
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    printWindow.onload = () => {
+        printWindow.print();
+    };
 }
 
 // ============================================================

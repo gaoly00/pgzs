@@ -334,6 +334,61 @@ async function renderReportDOCX(snapshot: ReportSnapshot): Promise<Uint8Array> {
 }
 
 // ============================================================
+// HTML 包装器
+// ============================================================
+
+function wrapHtmlForPrint(html: string, title: string): string {
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <title>估价报告 — ${title}</title>
+    <style>
+        @page { margin: 20mm; size: A4; }
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .no-print { display: none !important; }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "SimSun", "Microsoft YaHei", "PingFang SC", serif;
+            font-size: 12pt;
+            line-height: 1.8;
+            color: #1a1a1a;
+            background: #fff;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20mm;
+        }
+        h1 { font-size: 22pt; font-weight: bold; text-align: center; margin-bottom: 12pt; }
+        h2 { font-size: 16pt; font-weight: bold; border-bottom: 1px solid #e5e7eb; padding-bottom: 4pt; margin: 16pt 0 8pt; }
+        h3 { font-size: 14pt; font-weight: bold; margin: 12pt 0 6pt; }
+        p { margin-bottom: 6pt; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        td, th { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+        th { background: #f3f4f6; font-weight: 600; }
+        img { max-width: 100%; }
+    </style>
+</head>
+<body>${html}</body>
+</html>`;
+}
+
+function wrapHtmlForWord(html: string): string {
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+    body { font-family: "SimSun", "Noto Serif SC", serif; font-size: 12pt; line-height: 1.8; color: #1a1a1a; }
+    h1 { font-size: 22pt; font-weight: bold; text-align: center; }
+    h2 { font-size: 16pt; font-weight: bold; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+    h3 { font-size: 14pt; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    td, th { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+</style></head><body>${html}</body></html>`;
+}
+
+// ============================================================
 // 路由处理
 // ============================================================
 export async function POST(
@@ -351,11 +406,20 @@ export async function POST(
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') ?? 'pdf';
 
-    if (format !== 'pdf' && format !== 'docx') {
+    if (format !== 'pdf' && format !== 'docx' && format !== 'html-pdf') {
         return NextResponse.json(
-            { error: `不支持的导出格式: ${format}，目前支持 pdf / docx` },
+            { error: `不支持的导出格式: ${format}，目前支持 pdf / docx / html-pdf` },
             { status: 400 },
         );
+    }
+
+    // 读取请求体（可选，用于接收编辑器 HTML）
+    let editorHtml: string | null = null;
+    try {
+        const body = await request.json();
+        editorHtml = body.html || null;
+    } catch {
+        // 无 body 或非 JSON，忽略
     }
 
     // 查找快照
@@ -369,6 +433,7 @@ export async function POST(
 
     try {
         if (format === 'docx') {
+            // 使用结构化 docx 库生成 Word 文档
             const docBytes = await renderReportDOCX(snapshot);
             return new Response(docBytes.buffer as ArrayBuffer, {
                 status: 200,
@@ -379,8 +444,20 @@ export async function POST(
             });
         }
 
+        if (format === 'html-pdf') {
+            // 将编辑器 HTML 包装为带 A4 打印样式的完整 HTML 文档
+            const sourceHtml = editorHtml || renderReportHTML(snapshot);
+            const printHtml = wrapHtmlForPrint(sourceHtml, snapshot.projectName);
+            return new NextResponse(printHtml, {
+                status: 200,
+                headers: {
+                    'Content-Type': 'text/html; charset=utf-8',
+                },
+            });
+        }
+
         // PDF（HTML fallback）
-        const html = renderReportHTML(snapshot);
+        const html = editorHtml ? wrapHtmlForPrint(editorHtml, snapshot.projectName) : renderReportHTML(snapshot);
         return new NextResponse(html, {
             status: 200,
             headers: {

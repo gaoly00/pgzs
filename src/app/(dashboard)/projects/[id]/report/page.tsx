@@ -79,6 +79,7 @@ import {
     exportToWord,
     exportToPdf,
 } from '@/lib/template-engine';
+import { apiPost } from '@/lib/api-client';
 
 // ============================================================
 // 验证引擎
@@ -411,6 +412,18 @@ export default function ReportPage({
     }, [editor, project, id, saveReportContent, activeTemplate]);
 
     // ============================================================
+    // 创建快照（导出前调用）
+    // ============================================================
+    const createExportSnapshot = useCallback(async (): Promise<string | null> => {
+        const result = await apiPost<{ snapshot: { snapshotId: string } }>(`/api/projects/${id}/report/snapshot`);
+        if (result.ok) {
+            return result.data.snapshot.snapshotId;
+        }
+        console.error('创建快照失败:', !result.ok && result.error);
+        return null;
+    }, [id]);
+
+    // ============================================================
     // 导出 PDF
     // ============================================================
     const handleExportPDF = useCallback(async () => {
@@ -419,13 +432,18 @@ export default function ReportPage({
         const fileName = `${project?.name || '报告'}_${new Date().toLocaleDateString('zh-CN')}`;
         try {
             toast.info('正在生成 PDF，请稍候...');
-            await exportToPdf(html, fileName);
+            const snapshotId = await createExportSnapshot();
+            if (!snapshotId) {
+                toast.error('创建快照失败，无法导出');
+                return;
+            }
+            await exportToPdf(html, fileName, snapshotId);
             toast.success('PDF 导出成功');
         } catch (err) {
             console.error('PDF 导出失败:', err);
             toast.error('PDF 导出失败，请重试');
         }
-    }, [editor, project?.name]);
+    }, [editor, project?.name, createExportSnapshot]);
 
     // ============================================================
     // 导出 Word
@@ -436,13 +454,18 @@ export default function ReportPage({
         const fileName = `${project?.name || '报告'}_${new Date().toLocaleDateString('zh-CN')}`;
         try {
             toast.info('正在生成 Word 文档，请稍候...');
-            await exportToWord(html, fileName);
+            const snapshotId = await createExportSnapshot();
+            if (!snapshotId) {
+                toast.error('创建快照失败，无法导出');
+                return;
+            }
+            await exportToWord(html, fileName, snapshotId);
             toast.success('Word 导出成功');
         } catch (err) {
             console.error('Word 导出失败:', err);
             toast.error('Word 导出失败，请重试');
         }
-    }, [editor, project?.name]);
+    }, [editor, project?.name, createExportSnapshot]);
 
     // ============================================================
     // 空状态
