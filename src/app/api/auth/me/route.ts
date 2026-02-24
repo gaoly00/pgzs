@@ -15,6 +15,7 @@ export async function GET() {
         return NextResponse.json({
             userId: user.userId,
             username: user.username,
+            role: user.role,
         });
     } catch (error) {
         console.error('[me] 获取用户信息失败:', error);

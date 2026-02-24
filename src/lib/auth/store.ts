@@ -11,10 +11,15 @@ import path from 'path';
 // ============================================================
 // 类型定义
 // ============================================================
+
+/** 用户角色 */
+export type UserRole = 'admin' | 'manager' | 'reviewer' | 'valuer';
+
 export interface UserRecord {
     id: string;
     username: string;       // 存储为小写
     passwordHash: string;
+    role: UserRole;         // 用户角色
     createdAt: string;      // ISO 8601
 }
 
@@ -45,12 +50,17 @@ function ensureFile(filePath: string, defaultContent: string = '[]') {
 // 用户操作
 // ============================================================
 
-/** 读取所有用户 */
+/** 读取所有用户（含旧数据迁移兼容） */
 export function readUsers(): UserRecord[] {
     ensureFile(USERS_FILE);
     try {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
-        return JSON.parse(raw);
+        const users = JSON.parse(raw) as UserRecord[];
+        // 旧数据没有 role 字段，做迁移补充
+        return users.map((u) => ({
+            ...u,
+            role: u.role || (u.username === 'admin' ? 'admin' : 'valuer'),
+        }));
     } catch {
         return [];
     }

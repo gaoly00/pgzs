@@ -41,8 +41,8 @@ export async function createUserSession(userId: string): Promise<void> {
     });
 }
 
-/** 从 Cookie 验证会话，返回 userId 或 null */
-export async function verifySession(): Promise<{ userId: string; username: string } | null> {
+/** 从 Cookie 验证会话，返回 userId/username/role 或 null */
+export async function verifySession(): Promise<{ userId: string; username: string; role: string } | null> {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value;
     if (!token) return null;
@@ -54,7 +54,7 @@ export async function verifySession(): Promise<{ userId: string; username: strin
     const user = findUserById(session.userId);
     if (!user) return null;
 
-    return { userId: user.id, username: user.username };
+    return { userId: user.id, username: user.username, role: user.role || 'valuer' };
 }
 
 /** 登出：清除 Cookie + 删除会话记录 */

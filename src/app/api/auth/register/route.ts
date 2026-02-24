@@ -34,13 +34,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: '该用户名已被注册' }, { status: 409 });
         }
 
-        // 创建用户
+        // 创建用户（用户名 'admin' 自动获得管理员角色）
         const passwordHash = await hashPassword(password);
         const userId = uuidv4();
+        const role = normalized === 'admin' ? 'admin' : 'valuer';
         createUser({
             id: userId,
             username: normalized,
             passwordHash,
+            role: role as any,
             createdAt: new Date().toISOString(),
         });
 

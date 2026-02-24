@@ -1,18 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { verifySession } from '@/lib/auth/session';
 
 // 母板模板存储路径
 const TEMPLATES_DIR = path.join(process.cwd(), 'data', 'templates');
 const TEMPLATE_FILENAME = 'sales_comp_template.xlsx';
 
+// 允许上传的角色
+const UPLOAD_ROLES = ['admin', 'manager'];
+
 /**
  * POST /api/templates/sales-comp/upload
  * 上传比较法母板模板 (.xlsx)
- * 接受 multipart/form-data，字段名: file
+ * 需要 admin 或 manager 角色
  */
 export async function POST(request: NextRequest) {
     try {
+        // 权限校验
+        const session = await verifySession();
+        if (!session) {
+            return NextResponse.json({ ok: false, error: '未登录' }, { status: 401 });
+        }
+        if (!UPLOAD_ROLES.includes(session.role)) {
+            return NextResponse.json(
+                { ok: false, error: `权限不足：角色 ${session.role} 无权上传模板` },
+                { status: 403 }
+            );
+        }
+
         const formData = await request.formData();
         const file = formData.get('file') as File | null;
 

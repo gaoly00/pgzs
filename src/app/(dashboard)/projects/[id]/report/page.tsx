@@ -1,5 +1,13 @@
 'use client';
 
+import '@/styles/report-print.css';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
 import React, { use, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -26,7 +34,6 @@ import {
     ArrowLeft,
     Building2,
     Save,
-    Download,
     Bold,
     Italic,
     UnderlineIcon,
@@ -44,6 +51,7 @@ import {
     Highlighter,
     Baseline,
     Minus,
+
     Loader2,
     AlertCircle,
     AlertTriangle,
@@ -56,9 +64,21 @@ import {
     Code,
     Copy,
     RotateCcw,
-    Printer,
+    Maximize2,
+    Minimize2,
+    PanelRightClose,
+    PanelRightOpen,
+    ChevronDown,
+    FileDown,
+    FileType,
 } from 'lucide-react';
 import { generateDefaultReportTemplate } from '@/lib/report-template';
+import {
+    replacePlaceholders,
+    collectProjectData,
+    exportToWord,
+    exportToPdf,
+} from '@/lib/template-engine';
 
 // ============================================================
 // 验证引擎
@@ -196,10 +216,55 @@ export default function ReportPage({
     const project = useSmartValStore((s) => s.projects.find((p) => p.id === id));
     const saveReportContent = useSmartValStore((s) => s.saveReportContent);
 
-    const [exportingFormat, setExportingFormat] = useState<'pdf' | 'docx' | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSaved, setLastSaved] = useState<string | null>(null);
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // 沉浸式全屏 / 右侧面板状态
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [rightPanelOpen, setRightPanelOpen] = useState(true);
+
+    // 切换全屏时自动管理右面板
+    const toggleFullscreen = useCallback(() => {
+        setIsFullscreen(prev => {
+            const next = !prev;
+            // 进入全屏时隐藏右面板以获得更大编辑空间，退出时恢复
+            setRightPanelOpen(!next);
+            return next;
+        });
+    }, []);
+
+    // 全屏时锁定 body 滚动 + ESC 退出
+    useEffect(() => {
+        if (isFullscreen) {
+            document.body.style.overflow = 'hidden';
+            // 尝试浏览器原生全屏（失败则使用页面内全屏）
+            try { document.documentElement.requestFullscreen?.(); } catch { }
+        } else {
+            document.body.style.overflow = '';
+            try {
+                if (document.fullscreenElement) document.exitFullscreen?.();
+            } catch { }
+        }
+
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isFullscreen) setIsFullscreen(false);
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => {
+            window.removeEventListener('keydown', handleEsc);
+            document.body.style.overflow = '';
+        };
+    }, [isFullscreen]);
+
+    // 监听浏览器退出全屏事件
+    useEffect(() => {
+        const handleFsChange = () => {
+            if (!document.fullscreenElement && isFullscreen) setIsFullscreen(false);
+        };
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, [isFullscreen]);
 
     // 提取指标
     const extracted = useMemo(() => project?.extractedMetrics ?? {}, [project?.extractedMetrics]);
@@ -211,12 +276,35 @@ export default function ReportPage({
     const infos = validationItems.filter((i) => i.severity === 'info');
     const canExport = errors.length === 0;
 
-    // 生成初始内容
+    // 模板管理
+    const templates = useSmartValStore((s) => s.reportTemplates);
+    const updateProjectTemplate = useSmartValStore((s) => s.updateProjectTemplate);
+
+    // 找到项目绑定的模板（或第一个可用模板）
+    const activeTemplate = useMemo(() => {
+        if (!project) return null;
+        // 优先使用项目绑定的模板
+        if (project.templateId) {
+            return templates.find((t) => t.id === project.templateId) ?? null;
+        }
+        // 否则使用第一个可用模板
+        return templates.length > 0 ? templates[0] : null;
+    }, [project, templates]);
+
+    // 生成初始内容：优先使用已保存内容 > 模板替换 > 默认模板
     const initialContent = useMemo(() => {
         if (project?.reportContent) return project.reportContent;
         if (!project) return '<h1>加载中...</h1>';
+
+        // 如果有 Word 模板，使用模板 HTML 并替换占位符
+        if (activeTemplate?.htmlContent) {
+            const data = collectProjectData(project);
+            return replacePlaceholders(activeTemplate.htmlContent, data);
+        }
+
+        // 没有模板，使用内置默认模板
         return generateDefaultReportTemplate(project);
-    }, [project?.reportContent, project]);
+    }, [project?.reportContent, project, activeTemplate]);
 
     // ============================================================
     // Tiptap 编辑器配置
@@ -271,6 +359,22 @@ export default function ReportPage({
         };
     }, []);
 
+    // 开发期自检：确保 A4 白纸结构正确（防止断层回归）
+    useEffect(() => {
+        if (!editor) return;
+        const timer = setTimeout(() => {
+            const containers = document.querySelectorAll('.editor-container');
+            const proseMirrors = document.querySelectorAll('.ProseMirror');
+            if (containers.length !== 1) {
+                console.error(`[Report 自检] .editor-container 数量应为 1，实际为 ${containers.length}`);
+            }
+            if (proseMirrors.length > 0 && !proseMirrors[0].closest('.editor-container')) {
+                console.error('[Report 自检] ProseMirror 不在 .editor-container 内，会导致纸外断层');
+            }
+        }, 2000);
+        return () => clearTimeout(timer);
+    }, [editor]);
+
     // ============================================================
     // 手动保存
     // ============================================================
@@ -286,113 +390,59 @@ export default function ReportPage({
     }, [editor, id, saveReportContent]);
 
     // ============================================================
-    // 重新生成模板（重置内容）
+    // 重新生成报告（从模板重置内容）
     // ============================================================
     const handleRegenerate = useCallback(() => {
         if (!editor || !project) return;
-        const newContent = generateDefaultReportTemplate(project);
+        let newContent: string;
+
+        if (activeTemplate?.htmlContent) {
+            // 使用 Word 模板 + 最新数据重新生成
+            const data = collectProjectData(project);
+            newContent = replacePlaceholders(activeTemplate.htmlContent, data);
+            toast.success('已根据 Word 模板和最新数据重新生成报告');
+        } else {
+            newContent = generateDefaultReportTemplate(project);
+            toast.success('已根据内置模板重新生成报告');
+        }
+
         editor.commands.setContent(newContent);
         saveReportContent(id, newContent);
-        toast.success('已根据最新数据重新生成报告模板');
-    }, [editor, project, id, saveReportContent]);
+    }, [editor, project, id, saveReportContent, activeTemplate]);
 
     // ============================================================
-    // PDF 导出 — 使用浏览器原生 print()
-    // 彻底绕过 html2canvas 的 oklch/lab 颜色兼容性问题
+    // 导出 PDF
     // ============================================================
-    const exportPDF = useCallback(async () => {
+    const handleExportPDF = useCallback(async () => {
         if (!editor) return;
-
-        setExportingFormat('pdf');
+        const html = editor.getHTML();
+        const fileName = `${project?.name || '报告'}_${new Date().toLocaleDateString('zh-CN')}`;
         try {
-            const htmlContent = editor.getHTML();
-
-            // 构建独立的打印文档，使用标准 CSS 颜色
-            const printDoc = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="utf-8" />
-    <title>估价报告 — ${project?.name || ''}</title>
-    <style>
-        @page {
-            size: A4;
-            margin: 25mm 20mm;
+            toast.info('正在生成 PDF，请稍候...');
+            await exportToPdf(html, fileName);
+            toast.success('PDF 导出成功');
+        } catch (err) {
+            console.error('PDF 导出失败:', err);
+            toast.error('PDF 导出失败，请重试');
         }
-        * { box-sizing: border-box; }
-        body {
-            font-family: "SimSun", "Noto Serif SC", "Songti SC", serif;
-            font-size: 14px;
-            line-height: 1.8;
-            color: #000000;
-            background: #ffffff;
-            margin: 0;
-            padding: 0;
-        }
-        h1 { font-size: 22pt; font-weight: bold; margin: 16px 0; }
-        h2 { font-size: 16pt; font-weight: bold; margin: 14px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
-        h3 { font-size: 14pt; font-weight: bold; margin: 12px 0; }
-        p { margin: 8px 0; }
-        ul, ol { margin: 8px 0; padding-left: 24px; }
-        li { margin: 4px 0; }
-        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-        td, th {
-            border: 1px solid #d1d5db;
-            padding: 8px 12px;
-            text-align: left;
-        }
-        th { background: #f3f4f6; font-weight: 600; }
-        hr { border: none; border-top: 1px solid #d1d5db; margin: 16px 0; }
-        blockquote {
-            border-left: 3px solid #d1d5db;
-            margin: 12px 0;
-            padding: 4px 16px;
-            color: #4b5563;
-        }
-        sup { font-size: 0.75em; vertical-align: super; }
-        sub { font-size: 0.75em; vertical-align: sub; }
-        mark { background: #fef08a; padding: 0 2px; }
-        @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-    </style>
-</head>
-<body>
-    ${htmlContent}
-</body>
-</html>`;
+    }, [editor, project?.name]);
 
-            // 打开新窗口并触发打印
-            const printWindow = window.open('', '_blank');
-            if (!printWindow) {
-                toast.error('弹窗被浏览器拦截', { description: '请允许弹出窗口后重试' });
-                return;
-            }
-
-            printWindow.document.write(printDoc);
-            printWindow.document.close();
-
-            // 等待文档渲染完成后触发打印
-            printWindow.onload = () => {
-                setTimeout(() => {
-                    printWindow.print();
-                }, 300);
-            };
-
-            // 兜底：如果 onload 不触发（某些浏览器）
-            setTimeout(() => {
-                try { printWindow.print(); } catch { /* 忽略 */ }
-            }, 1500);
-
-            toast.success('打印对话框已打开', {
-                description: '选择「另存为 PDF」即可导出',
-            });
-        } catch (error) {
-            console.error('[PDF Export]', error);
-            toast.error('PDF 导出失败', { description: String(error) });
-        } finally {
-            setExportingFormat(null);
+    // ============================================================
+    // 导出 Word
+    // ============================================================
+    const handleExportWord = useCallback(async () => {
+        if (!editor) return;
+        const html = editor.getHTML();
+        const fileName = `${project?.name || '报告'}_${new Date().toLocaleDateString('zh-CN')}`;
+        try {
+            toast.info('正在生成 Word 文档，请稍候...');
+            await exportToWord(html, fileName);
+            toast.success('Word 导出成功');
+        } catch (err) {
+            console.error('Word 导出失败:', err);
+            toast.error('Word 导出失败，请重试');
         }
-    }, [editor, project]);
+    }, [editor, project?.name]);
 
     // ============================================================
     // 空状态
@@ -490,9 +540,12 @@ export default function ReportPage({
     // 主布局
     // ============================================================
     return (
-        <div className="flex flex-col h-[calc(100dvh-56px)] w-full overflow-hidden">
+        <div className={`flex flex-col w-full overflow-hidden ${isFullscreen
+            ? 'fixed inset-0 z-50 h-screen bg-slate-100 dark:bg-slate-950'
+            : 'h-[calc(100dvh-56px)]'
+            }`}>
             {/* ---- 顶部导航栏 ---- */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b bg-white dark:bg-slate-950 shrink-0 z-30">
+            <div className="report-toolbar flex items-center gap-3 px-4 py-2 border-b bg-white dark:bg-slate-950 shrink-0 z-30">
                 <Link href={`/projects/${id}`}>
                     <Button variant="ghost" size="icon" className="h-8 w-8">
                         <ArrowLeft className="h-4 w-4" />
@@ -543,18 +596,33 @@ export default function ReportPage({
                         {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                         保存
                     </Button>
-                    <Button size="sm" disabled={exportingFormat !== null} onClick={exportPDF}
-                        className="h-8 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-md shadow-orange-500/20 gap-1.5 text-xs">
-                        {exportingFormat === 'pdf'
-                            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> 导出中...</>
-                            : <><Printer className="h-3.5 w-3.5" /> Export PDF</>}
-                    </Button>
+                    {/* 导出下拉菜单 */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button size="sm"
+                                className="h-8 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-md shadow-orange-500/20 gap-1.5 text-xs">
+                                <FileDown className="h-3.5 w-3.5" />
+                                导出
+                                <ChevronDown className="h-3 w-3 ml-0.5" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[140px]">
+                            <DropdownMenuItem onClick={handleExportWord} className="gap-2 text-xs cursor-pointer">
+                                <FileType className="h-3.5 w-3.5" />
+                                导出 Word
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleExportPDF} className="gap-2 text-xs cursor-pointer">
+                                <FileDown className="h-3.5 w-3.5" />
+                                导出 PDF
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
 
-            {/* ---- Word 风格格式化工具栏 ---- */}
+            {/* ---- 格式化工具栏 ---- */}
             {editor && (
-                <div className="flex flex-wrap items-center gap-x-1 gap-y-1 px-3 py-1.5 border-b bg-slate-50 dark:bg-slate-900 shrink-0 z-20 overflow-x-auto">
+                <div className="report-toolbar flex flex-wrap items-center gap-x-1 gap-y-1 px-3 py-1.5 border-b bg-slate-50 dark:bg-slate-900 shrink-0 z-20 overflow-x-auto">
 
                     {/* 撤销/重做 */}
                     <TBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="撤销 (Ctrl+Z)">
@@ -688,105 +756,128 @@ export default function ReportPage({
             )}
 
             {/* ---- 双面板工作区 ---- */}
-            <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* ==== 左面板：A4 编辑器 (65%) ==== */}
-                <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-6 flex flex-col items-center">
+            <div className="flex-1 flex min-h-0 overflow-hidden relative">
+                {/* ==== 左面板：编辑区域 ==== */}
+                <div className={`print-area print-area-outer flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-slate-100 dark:bg-slate-900/50 ${isFullscreen ? 'p-3' : 'p-6'}`}>
                     {/* 仿 A4 纸张容器 */}
                     <div
-                        className="editor-container bg-white dark:bg-slate-950 w-full max-w-[816px] min-h-[1056px] shadow-xl border border-slate-200 dark:border-slate-800 rounded-sm"
+                        className={`editor-container bg-white dark:bg-slate-950 w-full shadow-xl border border-slate-200 dark:border-slate-800 rounded-sm mx-auto ${isFullscreen ? 'max-w-[980px]' : 'max-w-[816px]'}`}
                         style={{
-                            padding: '60px 72px',
+                            padding: isFullscreen ? '40px 56px' : '60px 72px',
                             fontFamily: '"SimSun", "Noto Serif SC", serif',
-                            fontSize: '14px',
+                            fontSize: isFullscreen ? '18px' : '14px',
                             lineHeight: '1.8',
+                            minHeight: isFullscreen ? '80vh' : '1056px',
                         }}
                     >
                         <EditorContent editor={editor} />
                     </div>
                     {/* 底部留白 */}
-                    <div className="h-12 shrink-0" />
+                    <div className="h-12" />
+                </div>
+
+                {/* 悬浮操作按钮：全屏 + 面板切换 */}
+                <div className={`report-float-buttons absolute top-3 z-30 flex flex-col gap-1.5 ${rightPanelOpen ? 'right-[332px]' : 'right-3'
+                    }`}>
+                    <button type="button" onClick={toggleFullscreen}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md hover:shadow-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                        title={isFullscreen ? '退出沉浸模式 (ESC)' : '沉浸式编辑'}>
+                        {isFullscreen
+                            ? <Minimize2 className="h-4 w-4 text-blue-600" />
+                            : <Maximize2 className="h-4 w-4 text-slate-500" />}
+                    </button>
+                    <button type="button" onClick={() => setRightPanelOpen(v => !v)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md hover:shadow-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                        title={rightPanelOpen ? '隐藏数据面板' : '显示数据面板'}>
+                        {rightPanelOpen
+                            ? <PanelRightClose className="h-4 w-4 text-slate-500" />
+                            : <PanelRightOpen className="h-4 w-4 text-slate-500" />}
+                    </button>
                 </div>
 
                 {/* ==== 右侧面板：数据 + 验证 (320px) ==== */}
-                <div className="w-80 flex flex-col bg-white dark:bg-slate-950 border-l overflow-hidden shrink-0">
-                    {/* 提取数据面板 */}
-                    <div className="flex-1 overflow-y-auto">
-                        {/* 数据参考区 */}
-                        <div className="px-4 py-3 border-b">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Copy className="h-4 w-4 text-blue-600" />
-                                <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                                    Extracted Data — 提取数据
-                                </h3>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground">
-                                编辑报告时参考这些已提取的字段值
-                            </p>
-                        </div>
-
-                        <div className="px-4 py-3 space-y-2">
-                            {Object.keys(extracted).length > 0 ? (
-                                Object.entries(extracted).map(([key, value]) => (
-                                    <div
-                                        key={key}
-                                        className="group p-2 rounded-md border border-slate-100 dark:border-slate-800 hover:border-blue-200 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors cursor-pointer"
-                                        onClick={() => {
-                                            // 点击复制值到剪贴板
-                                            if (value !== null && value !== undefined) {
-                                                navigator.clipboard.writeText(String(value));
-                                                toast.success(`已复制: ${value}`);
-                                            }
-                                        }}
-                                        title="点击复制值"
-                                    >
-                                        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                                            {key.replace(/_/g, ' ')}
-                                        </div>
-                                        <div className="text-sm font-mono font-medium text-blue-700 dark:text-blue-400 truncate">
-                                            {value !== null && value !== undefined ? String(value) : (
-                                                <span className="text-slate-300 italic">N/A</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center">
-                                    <p className="text-xs text-slate-400">
-                                        尚无提取数据。请在估价方法页面通过
-                                        <strong> Field Manager </strong>
-                                        绑定并提取字段。
-                                    </p>
+                {rightPanelOpen && (
+                    /* report-sidebar class 用于打印时隐藏 */
+                    <div className="report-sidebar w-80 flex flex-col bg-white dark:bg-slate-950 border-l overflow-hidden shrink-0">
+                        {/* 提取数据面板 */}
+                        <div className="flex-1 overflow-y-auto">
+                            {/* 数据参考区 */}
+                            <div className="px-4 py-3 border-b">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Copy className="h-4 w-4 text-blue-600" />
+                                    <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                        Extracted Data — 提取数据
+                                    </h3>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* 验证面板 */}
-                        <div className="px-4 py-3 border-t">
-                            <div className="flex items-center gap-2 mb-2">
-                                <ShieldCheck className="h-4 w-4 text-blue-600" />
-                                <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                                    Validation — 校验
-                                </h3>
+                                <p className="text-[10px] text-muted-foreground">
+                                    编辑报告时参考这些已提取的字段值
+                                </p>
                             </div>
 
-                            <div className="space-y-2">
-                                {errors.map(renderValidationCard)}
-                                {warnings.map(renderValidationCard)}
-                                {infos.map(renderValidationCard)}
+                            <div className="px-4 py-3 space-y-2">
+                                {Object.keys(extracted).length > 0 ? (
+                                    Object.entries(extracted).map(([key, value]) => (
+                                        <div
+                                            key={key}
+                                            className="group p-2 rounded-md border border-slate-100 dark:border-slate-800 hover:border-blue-200 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors cursor-pointer"
+                                            onClick={() => {
+                                                // 点击复制值到剪贴板
+                                                if (value !== null && value !== undefined) {
+                                                    navigator.clipboard.writeText(String(value));
+                                                    toast.success(`已复制: ${value}`);
+                                                }
+                                            }}
+                                            title="点击复制值"
+                                        >
+                                            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
+                                                {key.replace(/_/g, ' ')}
+                                            </div>
+                                            <div className="text-sm font-mono font-medium text-blue-700 dark:text-blue-400 truncate">
+                                                {value !== null && value !== undefined ? String(value) : (
+                                                    <span className="text-slate-300 italic">N/A</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center">
+                                        <p className="text-xs text-slate-400">
+                                            尚无提取数据。请在估价方法页面通过
+                                            <strong> Field Manager </strong>
+                                            绑定并提取字段。
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 验证面板 */}
+                            <div className="px-4 py-3 border-t">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <ShieldCheck className="h-4 w-4 text-blue-600" />
+                                    <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                        Validation — 校验
+                                    </h3>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {errors.map(renderValidationCard)}
+                                    {warnings.map(renderValidationCard)}
+                                    {infos.map(renderValidationCard)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 底部提示 */}
+                        <div className="px-4 py-3 border-t bg-slate-50 dark:bg-slate-900/50 shrink-0">
+                            <div className="flex items-start gap-2">
+                                <Sparkles className="h-3.5 w-3.5 text-purple-400 mt-0.5 shrink-0" />
+                                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                    报告内容每 3 秒自动保存。点击右侧数据值可复制到剪贴板。
+                                </p>
                             </div>
                         </div>
                     </div>
-
-                    {/* 底部提示 */}
-                    <div className="px-4 py-3 border-t bg-slate-50 dark:bg-slate-900/50 shrink-0">
-                        <div className="flex items-start gap-2">
-                            <Sparkles className="h-3.5 w-3.5 text-purple-400 mt-0.5 shrink-0" />
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                报告内容每 3 秒自动保存。点击右侧数据值可复制到剪贴板。
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                )}
             </div>
         </div>
     );

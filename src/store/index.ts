@@ -9,6 +9,7 @@ import type {
     ValuationMethodKey,
     SalesAnchor,
     CustomFieldDef,
+    ReportTemplate,
 } from '@/types';
 import { DEFAULT_COST_ITEM_NAMES } from '@/types';
 import { generateId } from '@/lib/id';
@@ -70,6 +71,12 @@ interface SmartValState {
     // Report
     saveReportContent: (projectId: string, htmlContent: string) => void;
     generateReport: (projectId: string) => void;
+
+    // Word 模板管理
+    reportTemplates: ReportTemplate[];
+    addTemplate: (template: ReportTemplate) => void;
+    deleteTemplate: (templateId: string) => void;
+    updateProjectTemplate: (projectId: string, templateId: string | undefined) => void;
 }
 
 // ============================================================
@@ -139,6 +146,7 @@ export const useSmartValStore = create<SmartValState>()(
             currentUserId: null,
             projectsByUser: {},
             projects: [],
+            reportTemplates: [],
 
             setCurrentUser: (userId: string) => {
                 set((state) => ({
@@ -467,6 +475,28 @@ export const useSmartValStore = create<SmartValState>()(
                     return setUserProjects(state, updated);
                 });
             },
+
+            // ---- Word 模板管理 ----
+            addTemplate: (template) => {
+                set((state) => ({
+                    reportTemplates: [...state.reportTemplates, template],
+                }));
+            },
+
+            deleteTemplate: (templateId) => {
+                set((state) => ({
+                    reportTemplates: state.reportTemplates.filter((t) => t.id !== templateId),
+                }));
+            },
+
+            updateProjectTemplate: (projectId, templateId) => {
+                set((state) => {
+                    const updated = updateProjectInList(getUserProjects(state), projectId, (p) =>
+                        setDirty({ ...p, templateId }),
+                    );
+                    return setUserProjects(state, updated);
+                });
+            },
         }),
         {
             name: 'smartval.store.v2',
@@ -475,6 +505,7 @@ export const useSmartValStore = create<SmartValState>()(
             partialize: (state) => ({
                 currentUserId: state.currentUserId,
                 projectsByUser: state.projectsByUser,
+                reportTemplates: state.reportTemplates,
             }),
             // 水合时恢复派生的 projects
             onRehydrateStorage: () => (state) => {

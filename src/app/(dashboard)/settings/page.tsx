@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Settings, Construction, ShieldCheck, UserCog, ArrowRight, User, LogOut } from 'lucide-react';
+import { ShieldCheck, UserCog, ArrowRight, User, LogOut, Construction } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
     const router = useRouter();
-    const [user, setUser] = useState<{ username: string } | null>(null);
+    const [user, setUser] = useState<{ username: string; role?: string } | null>(null);
 
     useEffect(() => {
         fetch('/api/auth/me')
@@ -33,7 +33,7 @@ export default function SettingsPage() {
             if (res.ok) {
                 toast.success('已安全退出');
                 router.push('/login');
-                router.refresh(); // 清除可能的客户端状态缓存
+                router.refresh();
             } else {
                 toast.error('退出失败');
             }
@@ -46,7 +46,7 @@ export default function SettingsPage() {
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-                <p className="text-muted-foreground text-sm">系统设置与管理</p>
+                <p className="text-muted-foreground text-sm">个人设置与账号管理</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
@@ -68,6 +68,11 @@ export default function SettingsPage() {
                             <p className="text-sm font-medium">
                                 当前登录用户: <span className="font-bold text-foreground text-base ml-1">{user?.username || '加载中...'}</span>
                             </p>
+                            {user?.role && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                    角色: <code className="px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono">{user.role}</code>
+                                </p>
+                            )}
                         </div>
                         <Button variant="outline" onClick={handleLogout} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">
                             <LogOut className="h-4 w-4 mr-2" />
@@ -135,13 +140,13 @@ export default function SettingsPage() {
                             </div>
                             <div>
                                 <CardTitle className="text-lg">更多设置 (Coming Soon)</CardTitle>
-                                <CardDescription>设置功能正在开发中，敬请期待</CardDescription>
+                                <CardDescription>个人偏好、通知等功能开发中</CardDescription>
                             </div>
                         </div>
                     </CardHeader>
                     <CardContent>
                         <p className="text-sm text-muted-foreground">
-                            未来此页面将包含：用户偏好设置、模板管理、数据导出配置等功能。
+                            未来此页面将包含：用户偏好设置、通知配置等个人相关功能。模板管理已迁移至「系统管理」区域。
                         </p>
                     </CardContent>
                 </Card>

@@ -117,6 +117,25 @@ export interface CustomFieldDef {
   unit?: string;
 }
 
+// ============================================================
+// Word 模板管理
+// ============================================================
+
+/** 全局 Word 报告模板 */
+export interface ReportTemplate {
+  id: string;
+  name: string;                          // 模板名称
+  fileName: string;                      // 原始文件名
+  /** .docx 文件内容（base64 编码） */
+  docxBase64: string;
+  /** mammoth 转换后的 HTML（缓存，避免每次重新转换） */
+  htmlContent?: string;
+  /** 模板中发现的占位符列表，如 ['client_name', 'property_address'] */
+  placeholders: string[];
+  uploadedAt: string;
+  updatedAt: string;
+}
+
 /** 项目 */
 export interface Project {
   id: string;
@@ -145,6 +164,9 @@ export interface Project {
   salesResult: SalesResult;             // Extracted numeric results (Legacy, keep for existing)
   extractedMetrics: Record<string, string | number | null>; // New: Generic extracted results
   customFields: CustomFieldDef[];       // New: User-defined fields
+
+  // Word 模板关联
+  templateId?: string;                   // 绑定的全局模板 ID
 
   // 报告内容（富文本 HTML）
   reportContent?: string;

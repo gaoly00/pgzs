@@ -1,0 +1,360 @@
+/* ================================================================
+ * report-print.css
+ * 报告分页预览 + 打印/导出一致性样式
+ * 策略：最终以打印引擎分页为准，网页分页只是预览
+ * ================================================================ */
+
+/* ================================================================
+ * 一、屏幕端分页预览样式（Paged Preview 模式）
+ * ================================================================ */
+
+/* 分页预览根容器 —— 灰底居中 */
+.paged-root {
+    background: #e5e7eb;
+    min-height: 100%;
+    padding: 32px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+}
+
+/* 深色模式 */
+.dark .paged-root {
+    background: #1e293b;
+}
+
+/* 单页 A4 容器 —— 模拟纸张效果 */
+.a4-page {
+    background: #ffffff;
+    width: 210mm;
+    min-height: 297mm;
+    box-shadow:
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 2px 4px -2px rgba(0, 0, 0, 0.1),
+        0 0 0 1px rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.dark .a4-page {
+    background: #0f172a;
+    box-shadow:
+        0 4px 6px -1px rgba(0, 0, 0, 0.3),
+        0 2px 4px -2px rgba(0, 0, 0, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* A4 页面内容区域 —— 模拟页边距 */
+.a4-content {
+    padding: 16mm 20mm;
+    font-family: "SimSun", "Noto Serif SC", "Songti SC", serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #1a1a1a;
+}
+
+.dark .a4-content {
+    color: #e2e8f0;
+}
+
+/* A4 内容区域中的排版样式（与编辑器一致） */
+.a4-content h1 {
+    font-size: 22pt;
+    font-weight: bold;
+    margin: 16px 0;
+    line-height: 1.4;
+}
+
+.a4-content h2 {
+    font-size: 16pt;
+    font-weight: bold;
+    margin: 14px 0;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 4px;
+}
+
+.a4-content h3 {
+    font-size: 14pt;
+    font-weight: bold;
+    margin: 12px 0;
+}
+
+.a4-content p {
+    margin: 8px 0;
+}
+
+.a4-content ul,
+.a4-content ol {
+    margin: 8px 0;
+    padding-left: 24px;
+}
+
+.a4-content li {
+    margin: 4px 0;
+}
+
+.a4-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+}
+
+.a4-content td,
+.a4-content th {
+    border: 1px solid #d1d5db;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.a4-content th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+
+.a4-content hr {
+    border: none;
+    border-top: 1px solid #d1d5db;
+    margin: 16px 0;
+}
+
+.a4-content blockquote {
+    border-left: 3px solid #d1d5db;
+    margin: 12px 0;
+    padding: 4px 16px;
+    color: #4b5563;
+}
+
+.a4-content sup {
+    font-size: 0.75em;
+    vertical-align: super;
+}
+
+.a4-content sub {
+    font-size: 0.75em;
+    vertical-align: sub;
+}
+
+.a4-content mark {
+    background: #fef08a;
+    padding: 0 2px;
+}
+
+.a4-content img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* 分页预览提示条 */
+.paged-hint-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #eff6ff 0%, #fefce8 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #1e40af;
+    max-width: 210mm;
+    width: 100%;
+}
+
+.dark .paged-hint-bar {
+    background: linear-gradient(135deg, #1e3a5f 0%, #3d3410 100%);
+    border-color: #1e40af;
+    color: #93c5fd;
+}
+
+.paged-hint-bar svg {
+    flex-shrink: 0;
+}
+
+
+/* ================================================================
+ * 二、打印样式（最终权威 —— @media print）
+ * 确保：导出 PDF = 打印结果
+ * ================================================================ */
+
+@media print {
+
+    /* ----- 2.1 强制 A4 页面设置 ----- */
+    @page {
+        size: A4;
+        margin: 16mm;
+    }
+
+    /* ----- 2.2 基础重置 ----- */
+    html,
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        font-size: 12pt !important;
+        line-height: 1.6 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        overflow: visible !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* ----- 2.3 隐藏非正文区域（必须） ----- */
+    /* 报告页工具栏 */
+    .report-toolbar {
+        display: none !important;
+    }
+
+    /* 右侧数据/验证面板 */
+    .report-sidebar {
+        display: none !important;
+    }
+
+    /* 左侧导航侧边栏（DashboardLayout 中的 DesktopSidebar / MobileSidebar） */
+    aside,
+    nav,
+    [data-sidebar],
+    .desktop-sidebar,
+    .mobile-sidebar {
+        display: none !important;
+    }
+
+    /* dashboard header（面包屑栏） */
+    header {
+        display: none !important;
+    }
+
+    /* 悬浮操作按钮 */
+    .report-float-buttons {
+        display: none !important;
+    }
+
+    /* 分页预览提示条 */
+    .paged-hint-bar {
+        display: none !important;
+    }
+
+    /* 视图模式切换栏 */
+    .view-mode-bar {
+        display: none !important;
+    }
+
+    /* ----- 2.4 打印区域正常显示 ----- */
+    .print-area {
+        display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+    }
+
+    /* 取消 A4 页面容器的视觉装饰 */
+    .a4-page {
+        box-shadow: none !important;
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        width: 100% !important;
+        min-height: auto !important;
+        page-break-after: always;
+    }
+
+    /* 最后一页不要多余的分页 */
+    .a4-page:last-child {
+        page-break-after: auto;
+    }
+
+    /* 分页预览根容器 —— 打印时去掉灰底和间距 */
+    .paged-root {
+        background: none !important;
+        padding: 0 !important;
+        gap: 0 !important;
+    }
+
+    /* 编辑器容器（连续模式下的打印） */
+    .editor-container {
+        box-shadow: none !important;
+        margin: 0 !important;
+        padding: 20mm !important;
+        border: none !important;
+        border-radius: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        min-height: auto !important;
+        background: #ffffff !important;
+    }
+
+    /* 重置外层布局约束 */
+    .print-area-outer {
+        background: none !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+
+    /* ----- 2.5 防跨页规则（核心） ----- */
+    /* 表格整体尽量不跨页 */
+    table {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* 表格行不被拆开 */
+    tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* 表头每页重复 */
+    thead {
+        display: table-header-group;
+    }
+
+    /* 图片、预格式化文本、引用块不跨页 */
+    img,
+    pre,
+    blockquote {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* 标题后面不能紧跟分页（避免标题落在页尾，正文在下一页） */
+    h1,
+    h2,
+    h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+    }
+
+    /* 有序/无序列表项不拆分 */
+    li {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* ----- 2.6 链接打印处理 ----- */
+    a {
+        color: #000000 !important;
+        text-decoration: underline !important;
+    }
+
+    /* ----- 2.7 父容器布局重置（确保打印时不被 flex 布局夹住） ----- */
+    .flex,
+    .flex-1,
+    .flex-col {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+    }
+
+    /* 底部留白不打印 */
+    .print-spacer {
+        display: none !important;
+    }
+}
