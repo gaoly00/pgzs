@@ -10,8 +10,11 @@ import type { NextRequest } from 'next/server';
 
 const COOKIE_NAME = 'sv_session';
 
-const SESSION_SECRET =
-    process.env.SESSION_SECRET || 'smartval-dev-session-secret-change-in-production';
+function getSessionSecret(): string {
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) throw new Error('SESSION_SECRET 环境变量未设置');
+    return secret;
+}
 
 // 受保护路径前缀
 const PROTECTED_PREFIXES = ['/projects', '/settings', '/admin'];
@@ -71,7 +74,7 @@ async function verifyCookieSignature(cookieValue: string): Promise<boolean> {
     const sig = cookieValue.slice(dotIndex + 1);
     if (!token || !sig) return false;
 
-    const expected = await hmacSign(token, SESSION_SECRET);
+    const expected = await hmacSign(token, getSessionSecret());
     return timingSafeEqual(sig, expected);
 }
 

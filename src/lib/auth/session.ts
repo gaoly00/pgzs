@@ -18,11 +18,11 @@ const SESSION_TTL_DAYS = 7;
 
 /**
  * 会话签名密钥
- * 生产环境必须通过 SESSION_SECRET 环境变量设置。
- * 开发环境使用默认值（仅限开发）。
+ * 必须通过 SESSION_SECRET 环境变量设置。
  */
-export const SESSION_SECRET =
-    process.env.SESSION_SECRET || 'smartval-dev-session-secret-change-in-production';
+const secret = process.env.SESSION_SECRET;
+if (!secret) throw new Error('SESSION_SECRET 环境变量未设置');
+export const SESSION_SECRET = secret;
 
 /** 对 token 进行 SHA-256 哈希（存储层只存哈希，不存明文） */
 function hashToken(token: string): string {

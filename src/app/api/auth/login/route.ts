@@ -16,7 +16,11 @@ import {
     resetFailures,
 } from '@/lib/auth/rate-limiter';
 
-/** 从请求中提取客户端 IP */
+/**
+ * 从请求中提取客户端 IP
+ * 注意：x-forwarded-for 头可被客户端伪造，需配合可信反向代理使用。
+ * 在生产环境中，应确保反向代理（如 Nginx）覆盖而非追加此头。
+ */
 function getClientIp(request: NextRequest): string {
     return (
         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
