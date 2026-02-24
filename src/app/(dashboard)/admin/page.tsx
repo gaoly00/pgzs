@@ -7,7 +7,7 @@
 
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Shield, FileSpreadsheet, Users, ArrowRight } from 'lucide-react';
+import { Shield, FileSpreadsheet, Users, ArrowRight, Database } from 'lucide-react';
 import { RequireRole, useCurrentUser } from '@/components/auth/require-role';
 
 function AdminHubContent() {
@@ -35,6 +35,17 @@ function AdminHubContent() {
             iconBg: 'bg-blue-50 dark:bg-blue-950',
             iconColor: 'text-blue-600',
             hoverText: 'group-hover:text-blue-600',
+        },
+        {
+            href: '/admin/migrate',
+            title: '数据迁移',
+            description: '一键将本地缓存项目迁移至服务端',
+            icon: Database,
+            gradient: 'from-orange-500 to-amber-500',
+            hoverBorder: 'hover:border-orange-500',
+            iconBg: 'bg-orange-50 dark:bg-orange-950',
+            iconColor: 'text-orange-600',
+            hoverText: 'group-hover:text-orange-600',
         },
     ];
 

@@ -12,6 +12,7 @@ import {
     updateProject,
     deleteProject,
 } from '@/lib/repositories/project-repo';
+import { writeAuditLog, AuditAction } from '@/lib/audit-logger';
 
 /** GET — 获取项目详情 */
 export async function GET(
@@ -102,7 +103,16 @@ export async function DELETE(
             return NextResponse.json({ error: '项目不存在' }, { status: 404 });
         }
 
-        console.log(`[project] 删除: ${projectId}, 租户: ${session.tenantId}, 用户: ${session.username}`);
+        // 审计日志
+        writeAuditLog({
+            action: AuditAction.PROJECT_DELETE,
+            userId: session.userId,
+            username: session.username,
+            tenantId: session.tenantId,
+            targetId: projectId,
+            targetType: 'project',
+            details: `删除项目: ${projectId}`,
+        });
 
         return NextResponse.json({ ok: true, message: '项目已删除' });
     } catch (error) {

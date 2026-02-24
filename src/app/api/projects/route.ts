@@ -12,6 +12,7 @@ import {
     createProject,
     type ServerProject,
 } from '@/lib/repositories/project-repo';
+import { writeAuditLog, AuditAction } from '@/lib/audit-logger';
 
 /** GET — 获取项目列表 */
 export async function GET() {
@@ -71,7 +72,16 @@ export async function POST(request: NextRequest) {
 
         createProject(session.tenantId, project);
 
-        console.log(`[projects] 创建: ${project.name} (${project.id}), 租户: ${session.tenantId}, 用户: ${session.username}`);
+        // 审计日志
+        writeAuditLog({
+            action: AuditAction.PROJECT_CREATE,
+            userId: session.userId,
+            username: session.username,
+            tenantId: session.tenantId,
+            targetId: project.id,
+            targetType: 'project',
+            details: `创建项目: ${project.name}`,
+        });
 
         return NextResponse.json({ ok: true, project }, { status: 201 });
     } catch (error) {

@@ -8,6 +8,7 @@ import { validateUsername, validatePassword } from '@/lib/auth/validators';
 import { findUserByUsername } from '@/lib/auth/store';
 import { verifyPassword } from '@/lib/auth/password';
 import { createUserSession } from '@/lib/auth/session';
+import { writeAuditLog, AuditAction } from '@/lib/audit-logger';
 
 export async function POST(request: NextRequest) {
     try {
@@ -40,6 +41,15 @@ export async function POST(request: NextRequest) {
 
         // 创建会话
         await createUserSession(user.id);
+
+        // 审计日志
+        writeAuditLog({
+            action: AuditAction.USER_LOGIN,
+            userId: user.id,
+            username: user.username,
+            tenantId: user.tenantId,
+            details: '登录成功',
+        });
 
         return NextResponse.json({
             userId: user.id,

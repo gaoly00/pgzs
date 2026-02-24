@@ -21,6 +21,7 @@ interface CurrentUser {
     userId: string;
     username: string;
     role: UserRole;
+    tenantId: string;
 }
 
 interface RequireRoleProps {
