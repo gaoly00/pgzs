@@ -243,6 +243,7 @@ export default function ProjectDashboardPage({
     );
 
     return (
+        <div className="h-full overflow-auto p-4">
         <div className="space-y-8">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -357,6 +358,7 @@ export default function ProjectDashboardPage({
                     </Link>
                 ))}
             </div>
+        </div>
         </div>
     );
 }

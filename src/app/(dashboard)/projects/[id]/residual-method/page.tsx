@@ -14,7 +14,7 @@ export default function ResidualMethodPage({
 }) {
     const { id } = use(params);
     return (
-        <div className="flex flex-col h-[calc(100dvh-56px)] w-full max-w-full min-w-0 overflow-hidden">
+        <div className="flex flex-col h-full w-full max-w-full min-w-0 overflow-hidden">
             <div className="flex-1 min-h-0 w-full min-w-0 overflow-hidden">
                 <ValuationWorkbookPage projectId={id} method="residual-method" />
             </div>

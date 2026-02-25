@@ -80,6 +80,7 @@ import {
     exportToPdf,
 } from '@/lib/template-engine';
 import { apiPost } from '@/lib/api-client';
+import { SheetDataPanel } from '@/components/workspace/sheet-data-panel';
 
 // ============================================================
 // 验证引擎
@@ -224,6 +225,7 @@ export default function ReportPage({
     // 沉浸式全屏 / 右侧面板状态
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [rightPanelOpen, setRightPanelOpen] = useState(true);
+    const [rightPanelTab, setRightPanelTab] = useState<'data' | 'sheet'>('data');
 
     // 切换全屏时自动管理右面板
     const toggleFullscreen = useCallback(() => {
@@ -565,7 +567,7 @@ export default function ReportPage({
     return (
         <div className={`flex flex-col w-full overflow-hidden ${isFullscreen
             ? 'fixed inset-0 z-50 h-screen bg-slate-100 dark:bg-slate-950'
-            : 'h-[calc(100dvh-56px)]'
+            : 'h-full'
             }`}>
             {/* ---- 顶部导航栏 ---- */}
             <div className="report-toolbar flex items-center gap-3 px-4 py-2 border-b bg-white dark:bg-slate-950 shrink-0 z-30">
@@ -822,6 +824,36 @@ export default function ReportPage({
                 {rightPanelOpen && (
                     /* report-sidebar class 用于打印时隐藏 */
                     <div className="report-sidebar w-80 flex flex-col bg-white dark:bg-slate-950 border-l overflow-hidden shrink-0">
+                        {/* Tab 切换 */}
+                        <div className="flex border-b shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setRightPanelTab('data')}
+                                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+                                    rightPanelTab === 'data'
+                                        ? 'border-blue-500 text-blue-700 dark:text-blue-300'
+                                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                提取数据
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRightPanelTab('sheet')}
+                                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+                                    rightPanelTab === 'sheet'
+                                        ? 'border-blue-500 text-blue-700 dark:text-blue-300'
+                                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                工作表
+                            </button>
+                        </div>
+
+                        {rightPanelTab === 'sheet' ? (
+                            <SheetDataPanel projectId={id} />
+                        ) : (
+                        <>
                         {/* 提取数据面板 */}
                         <div className="flex-1 overflow-y-auto">
                             {/* 数据参考区 */}
@@ -899,6 +931,8 @@ export default function ReportPage({
                                 </p>
                             </div>
                         </div>
+                        </>
+                        )}
                     </div>
                 )}
             </div>

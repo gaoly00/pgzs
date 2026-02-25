@@ -36,10 +36,15 @@ src/
 │   │   ├── project-repo.ts   # 项目 CRUD (ServerProject = SharedProject)
 │   │   └── sheet-repo.ts     # 工作簿 sheet CRUD (UPSERT)
 │   ├── api-client.ts         # 统一前端 fetch 封装 (apiGet/Post/Patch/Delete)
+│   ├── workspace-tabs.ts     # 底部工作台 Tab 配置 (routeSlug → methodKey 映射)
 │   ├── snapshot-store.ts     # 报告快照 (SQLite)
 │   ├── audit-logger.ts       # 审计日志 (SQLite)
 │   ├── template-engine.ts    # Word 模板处理 + 导出 (调用服务端 API)
 │   └── report-template.ts    # 默认 HTML 报告模板生成器
+├── components/
+│   └── workspace/
+│       ├── project-workspace-tab-bar.tsx  # 底部工作台 Tab 栏组件
+│       └── sheet-data-panel.tsx           # 报告页右侧工作表数据预览面板
 ├── types/
 │   ├── shared.ts             # SharedProject — 前后端共享的数据库结构
 │   └── index.ts              # Project extends SharedProject + 前端专属字段
@@ -48,7 +53,10 @@ src/
 └── app/
     ├── api/                  # ~21 个 API 路由
     ├── (auth)/               # 登录/注册/忘记密码
-    └── (dashboard)/          # 受保护的业务页面
+    └── (dashboard)/
+        └── projects/[id]/
+            ├── layout.tsx    # 项目级 Layout (flex-col + 底部 Tab 栏)
+            └── */page.tsx    # 各子页面 (h-full, 高度由 layout 管理)
 ```
 
 ## 数据库表 (SQLite: data/smartval.db)
@@ -93,6 +101,19 @@ tenants, users, sessions, projects, sheets, snapshots, audit_logs, word_template
    - 新增 `html-pdf` 格式端点
    - template-engine 的 exportToWord/exportToPdf 改为调用 API
 
+7. **项目工作台 Tab 栏 + 报告页工作表面板**
+   - 新增 `projects/[id]/layout.tsx`，底部固定 40px Tab 栏，所有子页面间保持不销毁
+   - `workspace-tabs.ts` 定义 12 个 Tab 映射 (routeSlug → methodKey)
+   - `ProjectWorkspaceTabBar` 根据 `project.valuationMethods` 过滤可见 Tab
+   - 所有 12 个子页面 `h-[calc(100dvh-56px)]` → `h-full`，高度由 layout 统一管理
+   - 报告页右侧面板新增"工作表"Tab，可查看任意估价方法的 FortuneSheet 数据
+   - `SheetDataPanel` 以只读 HTML table 展示，单元格点击复制
+
+8. **比较法页面统一化 + status API 修复**
+   - 移除比较法页面的工作簿状态检测、空状态警告 UI、下载工具栏
+   - 与其他方法页面一致：直接渲染 ValuationWorkbookPage，无数据时回退空白表格
+   - `sales-comp/status` API 增加 SQLite sheets 表检查，不再仅依赖磁盘 .xlsx 文件
+
 ### 已知待办 / 注意事项
 
 - `src/app/actions/valuation.ts` 已废弃但仍存在，无鉴权，应删除
@@ -101,6 +122,7 @@ tenants, users, sessions, projects, sheets, snapshots, audit_logs, word_template
 - 无测试框架，无测试文件
 - FortuneSheet 工作簿 PUT 保存仍用原始 fetch (api-client 无 apiPut)
 - 前端 Zustand store 仍有本地 createProject 回退逻辑
+- Excel 下载功能待统一设计（已从比较法页面移除，后续作为通用功能实现）
 
 ## 环境变量 (.env.local)
 

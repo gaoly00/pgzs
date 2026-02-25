@@ -7,7 +7,10 @@
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(grep Type error:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cd /c/Users/dell/Desktop/SmartVal && npm run migrate:json 2>&1)",
+      "Bash(sort:*)",
+      "Bash(ls:*)"
     ]
   }
 }
