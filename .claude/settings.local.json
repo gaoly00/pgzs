@@ -10,7 +10,17 @@
       "Bash(grep:*)",
       "Bash(cd /c/Users/dell/Desktop/SmartVal && npm run migrate:json 2>&1)",
       "Bash(sort:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm install xlsx)",
+      "Bash(curl -s http://localhost:300)",
+      "Bash(npm run lint -- --file \"src/app/\\(dashboard\\)/admin/audit-logs/page.tsx\")",
+      "Bash(npx eslint \"src/app/\\(dashboard\\)/admin/audit-logs/page.tsx\")",
+      "Bash(npx eslint \"src/app/\\(dashboard\\)/admin/page.tsx\")",
+      "Bash(npm install -D vitest @vitest/ui @testing-library/react @testing-library/jest-dom jsdom)",
+      "Bash(npm test -- --run)",
+      "Bash(npm install -D @vitejs/plugin-react)"
     ]
   }
 }

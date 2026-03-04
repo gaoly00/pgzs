@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSnapshot, type ReportSnapshot } from '@/lib/snapshot-store';
 import { STANDARD_FIELDS } from '@/lib/valuation-schema';
-import { verifySession } from '@/lib/auth/session';
+import { withAuth } from '@/lib/auth/with-auth';
 import {
     Document,
     Packer,
@@ -391,17 +391,12 @@ function wrapHtmlForWord(html: string): string {
 // ============================================================
 // 路由处理
 // ============================================================
-export async function POST(
+export const POST = withAuth(async (
     request: NextRequest,
+    _session,
     { params }: { params: Promise<{ snapshotId: string }> },
-) {
+) => {
     const { snapshotId } = await params;
-
-    // 鉴权
-    const session = await verifySession();
-    if (!session) {
-        return NextResponse.json({ error: '未登录' }, { status: 401 });
-    }
 
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') ?? 'pdf';
@@ -431,45 +426,37 @@ export async function POST(
         );
     }
 
-    try {
-        if (format === 'docx') {
-            // 使用结构化 docx 库生成 Word 文档
-            const docBytes = await renderReportDOCX(snapshot);
-            return new Response(docBytes.buffer as ArrayBuffer, {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'Content-Disposition': `attachment; filename="report-${snapshot.projectId}-${snapshotId}.docx"`,
-                },
-            });
-        }
+    if (format === 'docx') {
+        // 使用结构化 docx 库生成 Word 文档
+        const docBytes = await renderReportDOCX(snapshot);
+        return new Response(docBytes.buffer as ArrayBuffer, {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'Content-Disposition': `attachment; filename="report-${snapshot.projectId}-${snapshotId}.docx"`,
+            },
+        });
+    }
 
-        if (format === 'html-pdf') {
-            // 将编辑器 HTML 包装为带 A4 打印样式的完整 HTML 文档
-            const sourceHtml = editorHtml || renderReportHTML(snapshot);
-            const printHtml = wrapHtmlForPrint(sourceHtml, snapshot.projectName);
-            return new NextResponse(printHtml, {
-                status: 200,
-                headers: {
-                    'Content-Type': 'text/html; charset=utf-8',
-                },
-            });
-        }
-
-        // PDF（HTML fallback）
-        const html = editorHtml ? wrapHtmlForPrint(editorHtml, snapshot.projectName) : renderReportHTML(snapshot);
-        return new NextResponse(html, {
+    if (format === 'html-pdf') {
+        // 将编辑器 HTML 包装为带 A4 打印样式的完整 HTML 文档
+        const sourceHtml = editorHtml || renderReportHTML(snapshot);
+        const printHtml = wrapHtmlForPrint(sourceHtml, snapshot.projectName);
+        return new NextResponse(printHtml, {
             status: 200,
             headers: {
                 'Content-Type': 'text/html; charset=utf-8',
-                'Content-Disposition': `attachment; filename="report-${snapshot.projectId}-${snapshotId}.html"`,
             },
         });
-    } catch (error) {
-        console.error(`[export] ${format} 生成失败:`, error);
-        return NextResponse.json(
-            { error: `报告生成失败: ${(error as Error).message}` },
-            { status: 500 },
-        );
     }
-}
+
+    // PDF（HTML fallback）
+    const html = editorHtml ? wrapHtmlForPrint(editorHtml, snapshot.projectName) : renderReportHTML(snapshot);
+    return new NextResponse(html, {
+        status: 200,
+        headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': `attachment; filename="report-${snapshot.projectId}-${snapshotId}.html"`,
+        },
+    });
+});

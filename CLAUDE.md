@@ -1,4 +1,6 @@
-# CLAUDE.md — SmartVal 项目上下文
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 项目概述
 
@@ -134,7 +136,79 @@ ADMIN_RESET_SECRET=<管理员密码重置密钥>
 ## 常用命令
 
 ```bash
-npm run dev          # 开发服务器
+npm run dev          # 开发服务器 (http://localhost:3000)
 npm run build        # 生产构建
-npm run migrate:json # JSON 数据迁移到 SQLite
+npm start            # 启动生产服务器
+npm run lint         # 运行 ESLint 检查
+npm run migrate:json # JSON 数据迁移到 SQLite (一次性迁移脚本)
 ```
+## 工作流编排 (Workflow Orchestration)
+
+### 1. 默认开启计划模式 (Plan Mode Default)
+- 针对任何非琐碎任务（3步以上或涉及架构决策），必须进入计划模式。
+- 如果执行过程中出现偏差，立即停止并重新规划——不要盲目推进。
+- 计划模式不仅用于构建，也应涵盖验证步骤。
+- 预先编写详细规范，以减少歧义。
+
+### 2. Agent Team 与子代理策略 (Agent Team & Subagent Strategy)
+
+**何时启用 Agent Team**
+- 任务可拆解为 **2 个以上可并行执行**的专项工作流（如：前后端同步开发、安全/性能/测试三维审查）。
+- 各专项的工作量足够独立，值得分配一个独立上下文窗口。
+- 专项之间存在接口协调需求，需要 Teammates 互相通信（而非仅向调用方汇报）。
+
+**Team Lead 职责**
+- Team Lead 专注于**协调与汇总**，不直接承担具体编码任务。
+- 在创建团队时，必须为每位 Teammate 主动注入完整上下文：**项目结构、编码规范、当前任务目标、相关文件路径或 API 约定**——Teammates 不继承主会话历史，一切依赖创建指令中的信息。
+- 通过 `~/.claude/tasks/{团队名}/` 下的共享任务列表管理**依赖关系**，确保被阻塞的任务在前置任务完成前不会被启动。
+- 汇总各 Teammate 的输出，统一呈现给用户。
+
+**Teammate 设计原则**
+- 每位 Teammate 只承担**单一专项职责**（例如：安全漏洞、性能瓶颈、测试覆盖；或 backend、frontend）。
+- 需要跨边界决策时（如 API 协议），利用 **Teammate 间直接消息通信**进行协调，而非全部上报 Team Lead 中转。
+- Teammate 完成后向 Team Lead 汇报结果，由 Team Lead 做最终整合。
+
+**何时退化为传统子代理（而非 Agent Team）**
+- 调研、探索、数据收集等**轻量级单次任务**。
+- 任务间无横向通信需求，仅需向调用方汇报。
+- 工作量不足以支撑独立上下文窗口的小型操作。
+
+### 3. 自我进化循环 (Self-Improvement Loop)
+- 在用户进行任何纠正后：在 `tasks/lessons.md` 中更新该模式/教训。
+- 为自己编写规则，防止重复犯错。
+- 严格迭代这些教训，直到错误率下降。
+- 在每个项目会话开始时，审阅相关的教训记录。
+
+### 4. 完成前验证 (Verification Before Done)
+- 在证明方案有效之前，严禁将任务标记为已完成。
+- 必要时，对比主分支与修改后的行为差异。
+- 问自己："资深工程师（Staff Engineer）会批准这个改动吗？"
+- 运行测试、检查日志，并演示其正确性。
+
+### 5. 追求优雅（平衡取舍）(Demand Elegance)
+- 对于非琐碎的改动：停下来思考"是否有更优雅的实现方式？"
+- 如果修复方式感觉很"脏"（Hacky）：基于现有认知，重新实现更优雅的方案。
+- 简单的修复则跳过此步——避免过度设计。
+- 在展示成果前，先自我挑战/审视工作。
+
+### 6. 自主 Bug 修复 (Autonomous Bug Fixing)
+- 收到 Bug 报告后：直接修复，不要请求"手把手"指导。
+- 定位日志、错误、失败的测试——然后解决它们。
+- 尽量做到让用户零上下文切换（不打扰用户）。
+- 自主修复失败的 CI 测试，无需指令。
+
+## 任务管理 (Task Management)
+
+1. **计划先行**：在 `tasks/todo.md` 中编写带有复选框的任务清单；启用 Agent Team 时，同步在 `~/.claude/tasks/{团队名}/` 下维护带依赖关系的共享任务列表。
+2. **验证计划**：在开始实施前，先与用户确认方案，包括团队结构与分工。
+3. **跟踪进度**：随时标记已完成的项目；依赖任务在前置项完成后自动解阻塞。
+4. **解释变更**：在每一步提供高层级的逻辑摘要。
+5. **记录结果**：在 `tasks/todo.md` 中添加评审（Review）章节。
+6. **沉淀教训**：被纠错后，及时更新 `tasks/lessons.md`。
+
+## 核心原则 (Core Principles)
+
+- **简洁至上**：让每一次改动尽可能简单。对代码的影响降到最低。
+- **拒绝懒惰**：挖掘根本原因。杜绝临时补丁。坚持高级开发人员的标准。
+- **最小化影响**：改动应仅限于必要部分。严防引入新 Bug。
+- **上下文自足**：创建 Agent Team 时，每位 Teammate 的启动指令必须自包含——不依赖主会话历史，不假设 Teammates 已知任何背景信息。

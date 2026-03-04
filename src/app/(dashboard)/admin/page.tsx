@@ -6,8 +6,8 @@
  */
 
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Shield, FileSpreadsheet, Users, ArrowRight, Database } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Shield, FileSpreadsheet, Users, ArrowRight, Database, FileText } from 'lucide-react';
 import { RequireRole, useCurrentUser } from '@/components/auth/require-role';
 
 function AdminHubContent() {
@@ -35,6 +35,17 @@ function AdminHubContent() {
             iconBg: 'bg-blue-50 dark:bg-blue-950',
             iconColor: 'text-blue-600',
             hoverText: 'group-hover:text-blue-600',
+        },
+        {
+            href: '/admin/audit-logs',
+            title: '审计日志',
+            description: '查看系统操作审计日志记录',
+            icon: FileText,
+            gradient: 'from-emerald-500 to-teal-500',
+            hoverBorder: 'hover:border-emerald-500',
+            iconBg: 'bg-emerald-50 dark:bg-emerald-950',
+            iconColor: 'text-emerald-600',
+            hoverText: 'group-hover:text-emerald-600',
         },
         {
             href: '/admin/migrate',

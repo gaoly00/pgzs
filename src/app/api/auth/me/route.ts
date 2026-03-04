@@ -4,22 +4,13 @@
  */
 
 import { NextResponse } from 'next/server';
-import { verifySession } from '@/lib/auth/session';
+import { withAuth } from '@/lib/auth/with-auth';
 
-export async function GET() {
-    try {
-        const user = await verifySession();
-        if (!user) {
-            return NextResponse.json({ error: '未登录' }, { status: 401 });
-        }
-        return NextResponse.json({
-            userId: user.userId,
-            username: user.username,
-            role: user.role,
-            tenantId: user.tenantId,
-        });
-    } catch (error) {
-        console.error('[me] 获取用户信息失败:', error);
-        return NextResponse.json({ error: '获取用户信息失败' }, { status: 500 });
-    }
-}
+export const GET = withAuth(async (_request, session) => {
+    return NextResponse.json({
+        userId: session.userId,
+        username: session.username,
+        role: session.role,
+        tenantId: session.tenantId,
+    });
+});

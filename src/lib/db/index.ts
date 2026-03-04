@@ -10,6 +10,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { initSchema } from './schema';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'smartval.db');
 
@@ -20,7 +21,6 @@ export function getDb(): Database.Database {
     if (_db) {
         if (!_schemaReady) {
             _schemaReady = true;
-            const { initSchema } = require('./schema');
             initSchema();
         }
         return _db;
@@ -37,7 +37,6 @@ export function getDb(): Database.Database {
     _db.pragma('busy_timeout = 5000');
 
     _schemaReady = true;
-    const { initSchema } = require('./schema');
     initSchema();
 
     return _db;

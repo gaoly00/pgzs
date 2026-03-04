@@ -7,63 +7,15 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getSessionSecret, hmacSignEdge, timingSafeEqualEdge } from '@/lib/auth/hmac';
 
 const COOKIE_NAME = 'sv_session';
-
-function getSessionSecret(): string {
-    const secret = process.env.SESSION_SECRET;
-    if (!secret) throw new Error('SESSION_SECRET 环境变量未设置');
-    return secret;
-}
 
 // 受保护路径前缀
 const PROTECTED_PREFIXES = ['/projects', '/settings', '/admin'];
 
 // 公开路径（不需要认证）
 const PUBLIC_PATHS = ['/login', '/register', '/api/auth', '/forgot-password'];
-
-/** 将 hex 字符串转为 Uint8Array */
-function hexToBytes(hex: string): Uint8Array {
-    const bytes = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-    }
-    return bytes;
-}
-
-/** 将 ArrayBuffer 转为 hex 字符串 */
-function bufferToHex(buffer: ArrayBuffer): string {
-    return Array.from(new Uint8Array(buffer))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-}
-
-/** 使用 Web Crypto API 进行 HMAC-SHA256 签名 */
-async function hmacSign(data: string, secret: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign'],
-    );
-    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
-    return bufferToHex(sig);
-}
-
-/** 时间安全的字符串比较（防止时序攻击） */
-function timingSafeEqual(a: string, b: string): boolean {
-    if (a.length !== b.length) return false;
-    const aBuf = hexToBytes(a);
-    const bBuf = hexToBytes(b);
-    if (aBuf.length !== bBuf.length) return false;
-    let result = 0;
-    for (let i = 0; i < aBuf.length; i++) {
-        result |= aBuf[i] ^ bBuf[i];
-    }
-    return result === 0;
-}
 
 /** 验证 cookie 的 HMAC 签名 */
 async function verifyCookieSignature(cookieValue: string): Promise<boolean> {
@@ -74,8 +26,8 @@ async function verifyCookieSignature(cookieValue: string): Promise<boolean> {
     const sig = cookieValue.slice(dotIndex + 1);
     if (!token || !sig) return false;
 
-    const expected = await hmacSign(token, getSessionSecret());
-    return timingSafeEqual(sig, expected);
+    const expected = await hmacSignEdge(token, getSessionSecret());
+    return timingSafeEqualEdge(sig, expected);
 }
 
 export async function middleware(request: NextRequest) {

@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession } from '@/lib/auth/session';
+import { withAuth } from '@/lib/auth/with-auth';
 import { createProject, getProject } from '@/lib/repositories/project-repo';
 import { saveSheetData } from '@/lib/repositories/sheet-repo';
 import { writeAuditLog, AuditAction } from '@/lib/audit-logger';
@@ -19,15 +19,7 @@ import path from 'path';
 // 简易判断，如果有 docxBase64 则提取并存入 WORD_DIR
 const WORD_DIR = path.join(process.cwd(), 'data', 'templates', 'word');
 
-export async function POST(request: NextRequest) {
-    try {
-        const session = await verifySession();
-        if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 });
-
-        // 仅限 admin/manager 进行整体迁移
-        if (!['admin', 'manager'].includes(session.role)) {
-            return NextResponse.json({ error: '仅管理员可执行数据迁移' }, { status: 403 });
-        }
+export const POST = withAuth(async (request: NextRequest, session) => {
 
         const body = await request.json();
         const { projects, templates } = body;
@@ -124,9 +116,4 @@ export async function POST(request: NextRequest) {
             migratedProjectsCount,
             migratedTemplatesCount
         });
-
-    } catch (error) {
-        console.error('[migrate] 数据迁移失败:', error);
-        return NextResponse.json({ error: '数据迁移失败' }, { status: 500 });
-    }
-}
+}, ['admin', 'manager']);

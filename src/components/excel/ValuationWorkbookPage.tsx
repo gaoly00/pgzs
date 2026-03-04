@@ -4,16 +4,14 @@ import React, { useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic';
 import { useSmartValStore } from '@/store';
 import { Button } from '@/components/ui/button';
-import { Save, TableProperties, Loader2, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Save, TableProperties, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Download } from 'lucide-react';
 import { FieldManagerDrawer } from './FieldManagerDrawer';
 import { toast } from 'sonner';
-// 工作簿读写已迁移到 API（带鉴权 + 租户隔离），不再使用无鉴权的 Server Action
-// import { saveValuationSheet, getValuationSheet } from '@/app/actions/valuation';
 import { readAllSheets, captureSelection } from '@/lib/fortune-api';
 import { rcToA1 } from '@/lib/excel-coords';
 import { ensureWorkbookData } from '@/lib/fortune-template';
 import type { ValuationMethodKey } from '@/types';
-import { apiGet } from '@/lib/api-client';
+import { apiGet, apiPut } from '@/lib/api-client';
 
 const Workbook = dynamic(
     () => import('@fortune-sheet/react').then((mod) => mod.Workbook),
@@ -366,15 +364,10 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
             setServerSheet(toSave);
 
             // 通过鉴权 API 保存（带租户隔离）
-            const saveRes = await fetch(`/api/projects/${projectId}/sheets/${method}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: toSave }),
-            });
+            const result = await apiPut(`/api/projects/${projectId}/sheets/${method}`, { data: toSave });
 
-            if (!saveRes.ok) {
-                const err = await saveRes.json().catch(() => ({}));
-                throw new Error(err.error || `服务器返回 ${saveRes.status}`);
+            if (!result.ok) {
+                throw new Error(result.error);
             }
 
             toast.success(`${method} 数据已保存至数据库`);
@@ -386,6 +379,49 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
         }
 
     }, [projectId, project, method, updateSheetData, extractMetricsFromData]);
+
+    // ============================================================
+    // Excel 导出
+    // ============================================================
+    const handleExportExcel = useCallback(async () => {
+        if (!project) return;
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/sheets/${method}/export`);
+
+            if (!response.ok) {
+                const error = await response.json();
+                toast.error(error.error || '导出失败');
+                return;
+            }
+
+            // 获取文件名
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let fileName = `${project.name}_${method}.xlsx`;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+                if (match) {
+                    fileName = decodeURIComponent(match[1]);
+                }
+            }
+
+            // 下载文件
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success('Excel 文件已下载');
+        } catch (error) {
+            console.error('[Excel Export] 导出失败:', error);
+            toast.error('导出失败');
+        }
+    }, [projectId, project, method]);
 
     // ============================================================
     // Loading 状态
@@ -436,6 +472,11 @@ export function ValuationWorkbookPage({ projectId, method }: Props) {
                             <AlertTriangle className="w-3 h-3" /> {debugMsg}
                         </span>
                     )}
+
+                    <Button variant="outline" size="sm" onClick={handleExportExcel} className="h-8">
+                        <Download className="h-3.5 w-3.5 mr-2" />
+                        Export Excel
+                    </Button>
 
                     <Button variant="default" size="sm" onClick={handleSaveAndExtract} className="h-8 bg-black text-white hover:bg-slate-800">
                         <Save className="h-3.5 w-3.5 mr-2" />

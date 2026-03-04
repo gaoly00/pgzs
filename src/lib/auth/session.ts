@@ -12,17 +12,10 @@
 import { cookies } from 'next/headers';
 import crypto from 'crypto';
 import { createSession, findSession, deleteSession, findUserById } from './store';
+import { getSessionSecret, hmacSignNode, timingSafeEqualNode } from './hmac';
 
 export const COOKIE_NAME = 'sv_session';
 const SESSION_TTL_DAYS = 7;
-
-/**
- * 会话签名密钥
- * 必须通过 SESSION_SECRET 环境变量设置。
- */
-const secret = process.env.SESSION_SECRET;
-if (!secret) throw new Error('SESSION_SECRET 环境变量未设置');
-export const SESSION_SECRET = secret;
 
 /** 对 token 进行 SHA-256 哈希（存储层只存哈希，不存明文） */
 function hashToken(token: string): string {
@@ -31,7 +24,7 @@ function hashToken(token: string): string {
 
 /** 对 token 进行 HMAC-SHA256 签名 */
 function signToken(token: string): string {
-    return crypto.createHmac('sha256', SESSION_SECRET).update(token).digest('hex');
+    return hmacSignNode(token, getSessionSecret());
 }
 
 /** 组装 cookie 值: token.signature */
@@ -51,16 +44,7 @@ export function unpackCookie(cookieValue: string): string | null {
 
     // 使用 timingSafeEqual 防止时序攻击
     const expected = signToken(token);
-    if (sig.length !== expected.length) return null;
-
-    try {
-        const sigBuf = Buffer.from(sig, 'hex');
-        const expectedBuf = Buffer.from(expected, 'hex');
-        if (sigBuf.length !== expectedBuf.length) return null;
-        if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
-    } catch {
-        return null;
-    }
+    if (!timingSafeEqualNode(sig, expected)) return null;
 
     return token;
 }

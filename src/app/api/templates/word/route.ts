@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession } from '@/lib/auth/session';
+import { withAuth } from '@/lib/auth/with-auth';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -40,48 +40,26 @@ function rowToMeta(r: any): WordTemplateMeta {
 }
 
 /** GET — 获取 Word 模板列表 */
-export async function GET() {
-    try {
-        const session = await verifySession();
-        if (!session) {
-            return NextResponse.json({ error: '未登录' }, { status: 401 });
-        }
-
-        const db = getDb();
-        const rows = db.prepare('SELECT * FROM word_templates ORDER BY uploaded_at DESC').all() as any[];
-        // 返回兼容旧格式的字段名
-        const templates = rows.map(r => ({
-            id: r.id,
-            name: r.name,
-            fileName: r.original_name,
-            placeholders: JSON.parse(r.placeholders || '[]'),
-            fileSizeBytes: r.size,
-            uploadedAt: r.uploaded_at,
-            updatedAt: r.uploaded_at,
-            uploadedBy: r.uploaded_by,
-        }));
-        return NextResponse.json({ templates });
-    } catch (error) {
-        console.error('[word-templates GET] 错误:', error);
-        return NextResponse.json({ error: '获取模板列表失败' }, { status: 500 });
-    }
-}
+export const GET = withAuth(async () => {
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM word_templates ORDER BY uploaded_at DESC').all() as any[];
+    // 返回兼容旧格式的字段名
+    const templates = rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        fileName: r.original_name,
+        placeholders: JSON.parse(r.placeholders || '[]'),
+        fileSizeBytes: r.size,
+        uploadedAt: r.uploaded_at,
+        updatedAt: r.uploaded_at,
+        uploadedBy: r.uploaded_by,
+    }));
+    return NextResponse.json({ templates });
+});
 
 /** POST — 上传 Word 模板 */
-export async function POST(request: NextRequest) {
-    try {
-        const session = await verifySession();
-        if (!session) {
-            return NextResponse.json({ error: '未登录' }, { status: 401 });
-        }
-        if (!UPLOAD_ROLES.includes(session.role)) {
-            return NextResponse.json(
-                { error: `权限不足：角色 ${session.role} 无权上传模板` },
-                { status: 403 }
-            );
-        }
-
-        const formData = await request.formData();
+export const POST = withAuth(async (request: NextRequest, session) => {
+    const formData = await request.formData();
         const file = formData.get('file') as File | null;
 
         if (!file) {
@@ -150,8 +128,4 @@ export async function POST(request: NextRequest) {
         console.log(`[word-templates] 上传成功: ${meta.name} (${placeholders.length} 个占位符), 操作者: ${session.username}`);
 
         return NextResponse.json({ ok: true, template: meta });
-    } catch (error) {
-        console.error('[word-templates POST] 错误:', error);
-        return NextResponse.json({ error: '上传失败: ' + String(error) }, { status: 500 });
-    }
-}
+}, ['admin', 'manager']);
