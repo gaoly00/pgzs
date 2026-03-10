@@ -242,9 +242,28 @@ export default function ProjectDashboardPage({
         (mod) => mod.methodKey === null || currentMethods.includes(mod.methodKey),
     );
 
+    // 关键指标提取
+    const metrics = project.extractedMetrics ?? {};
+    const unitPrice = typeof metrics['subject_value_unit'] === 'number' ? metrics['subject_value_unit'] : null;
+    const totalValue = typeof metrics['subject_value_total'] === 'number' ? metrics['subject_value_total'] : null;
+    const gfa = project.gfa;
+
+    // 检查每个方法是否有工作簿数据
+    const hasSheetData = (method: string): boolean => {
+        const data = project.sheetData?.[method];
+        if (!data) return false;
+        if (Array.isArray(data) && data.length > 0) {
+            // 检查是否有实际的单元格数据
+            return data.some((sheet: any) =>
+                sheet.celldata && Array.isArray(sheet.celldata) && sheet.celldata.length > 0
+            );
+        }
+        return false;
+    };
+
     return (
         <div className="h-full overflow-auto p-4">
-        <div className="space-y-8">
+        <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -323,42 +342,102 @@ export default function ProjectDashboardPage({
                 <div className="flex items-center gap-2">
                     {project.status.isDirty ? (
                         <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
-                            Data Changed
+                            数据已变更
                         </Badge>
                     ) : (
                         <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50">
-                            Up-to-date
+                            已同步
                         </Badge>
                     )}
                 </div>
             </div>
 
-            {/* Module Cards Only - No more Settings Card */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {visibleCards.map((mod) => (
-                    <Link key={mod.key} href={`/projects/${project.id}/${mod.key}`}>
-                        <Card className="group relative overflow-hidden border border-border/50 hover:border-transparent hover:shadow-xl transition-all duration-300 cursor-pointer h-full">
-                            <div className={`absolute inset-0 bg-gradient-to-br ${mod.gradient} opacity-0 group-hover:opacity-[0.03] transition-opacity`} />
-                            <CardHeader className="pb-3">
-                                <div className="flex items-center gap-4">
-                                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}`}>
-                                        <mod.icon className="h-6 w-6" />
+            {/* 关键指标摘要 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="border-blue-100 dark:border-blue-900">
+                    <CardContent className="pt-4 pb-3 px-4">
+                        <p className="text-xs text-muted-foreground">估价单价</p>
+                        <p className="text-xl font-bold text-blue-700 dark:text-blue-400 mt-1">
+                            {unitPrice !== null ? `¥${unitPrice.toLocaleString('zh-CN')}` : '—'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">元/㎡</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-emerald-100 dark:border-emerald-900">
+                    <CardContent className="pt-4 pb-3 px-4">
+                        <p className="text-xs text-muted-foreground">估价总价</p>
+                        <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+                            {totalValue !== null
+                                ? totalValue >= 10000
+                                    ? `¥${(totalValue / 10000).toFixed(2)}万`
+                                    : `¥${totalValue.toLocaleString('zh-CN')}`
+                                : '—'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">元</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-slate-100 dark:border-slate-800">
+                    <CardContent className="pt-4 pb-3 px-4">
+                        <p className="text-xs text-muted-foreground">建筑面积</p>
+                        <p className="text-xl font-bold mt-1">
+                            {gfa !== null ? `${gfa.toLocaleString('zh-CN')}` : '—'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">㎡</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-slate-100 dark:border-slate-800">
+                    <CardContent className="pt-4 pb-3 px-4">
+                        <p className="text-xs text-muted-foreground">估价方法</p>
+                        <p className="text-xl font-bold mt-1">
+                            {currentMethods.length}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">种方法已启用</p>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Module Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {visibleCards.map((mod) => {
+                    const hasData = mod.methodKey ? hasSheetData(mod.key === 'cost' ? 'cost-approach' : mod.key === 'income' ? 'income-approach' : mod.key) : null;
+
+                    return (
+                        <Link key={mod.key} href={`/projects/${project.id}/${mod.key}`}>
+                            <Card className="group relative overflow-hidden border border-border/50 hover:border-transparent hover:shadow-xl transition-all duration-300 cursor-pointer h-full">
+                                <div className={`absolute inset-0 bg-gradient-to-br ${mod.gradient} opacity-0 group-hover:opacity-[0.03] transition-opacity`} />
+                                <CardHeader className="pb-3">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}`}>
+                                            <mod.icon className="h-6 w-6" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <CardTitle className="text-lg group-hover:text-blue-600 transition-colors">
+                                                    {mod.label}
+                                                </CardTitle>
+                                                {hasData !== null && (
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                                        hasData
+                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {hasData ? '有数据' : '空'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-muted-foreground mt-0.5">
+                                                {mod.description}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <CardTitle className="text-lg group-hover:text-blue-600 transition-colors">
-                                            {mod.label}
-                                        </CardTitle>
-                                        <p className="text-sm text-muted-foreground mt-0.5">
-                                            {mod.description}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardHeader>
-                        </Card>
-                    </Link>
-                ))}
+                                </CardHeader>
+                            </Card>
+                        </Link>
+                    );
+                })}
             </div>
         </div>
         </div>
     );
 }
+
