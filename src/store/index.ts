@@ -27,9 +27,6 @@ interface SmartValState {
     // 项目列表（从 API 加载，不再持久化到 localStorage）
     projects: Project[];
 
-    // 兼容：旧的 projectsByUser 仅用于数据迁移
-    projectsByUser: Record<string, Project[]>;
-
     // 用户管理
     setCurrentUser: (userId: string) => void;
     logoutUser: () => void;
@@ -39,10 +36,9 @@ interface SmartValState {
     syncProjectToServer: (projectId: string) => Promise<void>;
 
     // ---- Actions ----
-    createProject: (data: CreateProjectInput) => string;
     createProjectViaAPI: (data: CreateProjectInput) => Promise<string>;
-    deleteProject: (id: string) => void;
     deleteProjectViaAPI: (id: string) => Promise<boolean>;
+    deleteProject: (id: string) => void;
     updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'projectNumber' | 'projectType' | 'valuationDate' | 'propertyType' | 'gfa' | 'address'>>) => void;
     updateValuationMethods: (projectId: string, methods: ValuationMethodKey[]) => void;
 
@@ -54,7 +50,6 @@ interface SmartValState {
     // Sales Comp (FortuneSheet — Field Manager & Hybrid Storage)
     bindAnchor: (projectId: string, fieldKey: string, anchor: SalesAnchor) => void;
     unbindAnchor: (projectId: string, fieldKey: string) => void;
-    updateSalesSheetData: (projectId: string, data: any) => void;
     updateSheetData: (projectId: string, sheetType: string, data: any) => void;
 
     // Custom Fields
@@ -82,11 +77,6 @@ interface SmartValState {
 
     // Word 模板关联
     updateProjectTemplate: (projectId: string, templateId: string | undefined) => void;
-
-    // 已弃用：Word 模板已迁移到服务端 API
-    reportTemplates: any[];
-    addTemplate: (template: any) => void;
-    deleteTemplate: (templateId: string) => void;
 }
 
 // ============================================================
@@ -137,16 +127,10 @@ export const useSmartValStore = create<SmartValState>()(
     persist(
         (set, get) => ({
             currentUserId: null,
-            projectsByUser: {},
             projects: [],
-            reportTemplates: [],
 
             setCurrentUser: (userId: string) => {
-                set((state) => ({
-                    currentUserId: userId,
-                    // 尝试从旧数据恢复（兼容迁移期）
-                    projects: state.projects.length > 0 ? state.projects : (state.projectsByUser[userId] ?? []),
-                }));
+                set({ currentUserId: userId });
             },
 
             logoutUser: () => {
@@ -179,105 +163,52 @@ export const useSmartValStore = create<SmartValState>()(
                 }
             },
 
-            // ---- Create Project (本地版本，保持兼容) ----
-            createProject: (data) => {
-                const id = generateId();
-                const now = new Date().toISOString();
-                const newProject: Project = {
-                    id,
-                    tenantId: '',
-                    name: data.name,
-                    projectNumber: data.projectNumber,
-                    projectType: data.projectType ?? 'real-estate',
-                    valuationDate: data.valuationDate ?? '',
-                    propertyType: data.propertyType ?? '',
-                    gfa: data.gfa ?? null,
-                    address: data.address ?? '',
-                    valuationMethods: data.valuationMethods ?? ['sales-comp'],
-                    salesCompCases: createDefaultSalesCompCases(),
-                    costItems: createDefaultCostItems(),
-                    conclusion: {
-                        selectedMethod: 'salesComp',
-                        manualUnitPrice: null,
-                        manualReason: '',
-                    },
-                    salesSheetData: null,
-                    sheetData: {},
-                    salesAnchors: {},
-                    salesResult: { unitPrice: null, totalValue: null },
-                    extractedMetrics: {},
-                    customFields: [],
-                    createdBy: get().currentUserId ?? '',
-                    status: {
-                        isDirty: false,
-                        reportGeneratedAt: null,
-                    },
-                    createdAt: now,
-                    updatedAt: now,
-                };
-                set((state) => ({
-                    projects: [...state.projects, newProject],
-                }));
-                return id;
-            },
-
             // ---- Create Project (API 版本) ----
             createProjectViaAPI: async (data) => {
-                try {
-                    const result = await apiPost<{ project: any }>('/api/projects', data);
-                    if (result.ok && result.data.project) {
-                        const serverProject = result.data.project;
-                        const fullProject: Project = {
-                            ...serverProject,
-                            salesCompCases: serverProject.salesCompCases ?? createDefaultSalesCompCases(),
-                            costItems: serverProject.costItems ?? createDefaultCostItems(),
-                            conclusion: serverProject.conclusion ?? {
-                                selectedMethod: 'salesComp',
-                                manualUnitPrice: null,
-                                manualReason: '',
-                            },
-                            salesSheetData: serverProject.salesSheetData ?? null,
-                            sheetData: serverProject.sheetData ?? {},
-                            salesAnchors: serverProject.salesAnchors ?? {},
-                            salesResult: serverProject.salesResult ?? { unitPrice: null, totalValue: null },
-                            extractedMetrics: serverProject.extractedMetrics ?? {},
-                            customFields: serverProject.customFields ?? [],
-                            status: serverProject.status ?? { isDirty: false, reportGeneratedAt: null },
-                        };
-                        set((state) => ({
-                            projects: [...state.projects, fullProject],
-                        }));
-                        return fullProject.id;
-                    }
-                    throw new Error(!result.ok ? result.error : '创建失败');
-                } catch (err) {
-                    console.error('[store] API 创建项目失败，回退到本地:', err);
-                    // 回退到本地创建
-                    return get().createProject(data);
+                const result = await apiPost<{ project: any }>('/api/projects', data);
+                if (result.ok && result.data.project) {
+                    const serverProject = result.data.project;
+                    const fullProject: Project = {
+                        ...serverProject,
+                        salesCompCases: serverProject.salesCompCases ?? [],
+                        costItems: serverProject.costItems ?? [],
+                        conclusion: serverProject.conclusion ?? {
+                            selectedMethod: 'salesComp',
+                            manualUnitPrice: null,
+                            manualReason: '',
+                        },
+                        sheetData: serverProject.sheetData ?? {},
+                        salesAnchors: serverProject.salesAnchors ?? {},
+                        salesResult: serverProject.salesResult ?? { unitPrice: null, totalValue: null },
+                        extractedMetrics: serverProject.extractedMetrics ?? {},
+                        customFields: serverProject.customFields ?? [],
+                        status: serverProject.status ?? { isDirty: false, reportGeneratedAt: null },
+                    };
+                    set((state) => ({
+                        projects: [...state.projects, fullProject],
+                    }));
+                    return fullProject.id;
                 }
+                throw new Error(!result.ok ? result.error : '创建项目失败');
             },
 
-            // ---- Delete Project (本地版本) ----
+            // ---- Delete Project (本地缓存清理) ----
             deleteProject: (id) => {
                 set((state) => ({
                     projects: state.projects.filter((p) => p.id !== id),
                 }));
             },
 
-            // ---- Delete Project (API 版本) ----
+            // ---- Delete Project (API + 本地缓存同步) ----
             deleteProjectViaAPI: async (id) => {
-                try {
-                    const result = await apiDelete(`/api/projects/${id}`);
-                    if (result.ok) {
-                        set((state) => ({
-                            projects: state.projects.filter((p) => p.id !== id),
-                        }));
-                        return true;
-                    }
-                    return false;
-                } catch {
-                    return false;
+                const result = await apiDelete(`/api/projects/${id}`);
+                if (result.ok) {
+                    set((state) => ({
+                        projects: state.projects.filter((p) => p.id !== id),
+                    }));
+                    return true;
                 }
+                return false;
             },
 
             // ---- Update Project ----
@@ -368,13 +299,6 @@ export const useSmartValStore = create<SmartValState>()(
                 }));
             },
 
-            updateSalesSheetData: (projectId, data) => {
-                set((state) => ({
-                    projects: updateProjectInList(state.projects, projectId, (p) =>
-                        setDirty({ ...p, salesSheetData: data }),
-                    ),
-                }));
-            },
 
             updateSheetData: (projectId, sheetType, data) => {
                 set((state) => ({
@@ -528,14 +452,6 @@ export const useSmartValStore = create<SmartValState>()(
                         updatedAt: new Date().toISOString(),
                     })),
                 }));
-            },
-
-            // ---- Word 模板（已弃用，保持接口兼容） ----
-            addTemplate: () => {
-                console.warn('[store] addTemplate 已弃用，请使用 /api/templates/word API');
-            },
-            deleteTemplate: () => {
-                console.warn('[store] deleteTemplate 已弃用，请使用 /api/templates/word API');
             },
 
             updateProjectTemplate: (projectId, templateId) => {

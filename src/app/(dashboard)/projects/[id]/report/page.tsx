@@ -279,16 +279,33 @@ export default function ReportPage({
     const infos = validationItems.filter((i) => i.severity === 'info');
     const canExport = errors.length === 0;
 
-    // 模板管理
-    const templates = useSmartValStore((s) => s.reportTemplates);
+    // 模板管理 — 从服务端 API 获取
+    const [templates, setTemplates] = useState<any[]>([]);
     const updateProjectTemplate = useSmartValStore((s) => s.updateProjectTemplate);
+
+    // 加载模板列表
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const { apiGet } = await import('@/lib/api-client');
+                const result = await apiGet<{ templates: any[] }>('/api/templates/word');
+                if (active && result.ok) {
+                    setTemplates(result.data.templates ?? []);
+                }
+            } catch (err) {
+                console.warn('[Report] 加载 Word 模板失败:', err);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
 
     // 找到项目绑定的模板（或第一个可用模板）
     const activeTemplate = useMemo(() => {
         if (!project) return null;
         // 优先使用项目绑定的模板
         if (project.templateId) {
-            return templates.find((t) => t.id === project.templateId) ?? null;
+            return templates.find((t: any) => t.id === project.templateId) ?? null;
         }
         // 否则使用第一个可用模板
         return templates.length > 0 ? templates[0] : null;

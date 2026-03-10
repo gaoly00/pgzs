@@ -150,6 +150,7 @@ export interface Project extends SharedProject {
   salesCompCases?: SalesCompCase[];
   costItems?: CostItem[];
   conclusion?: Conclusion;
+  /** @deprecated 使用 sheetData['sales-comp'] 代替 */
   salesSheetData?: any | null;
   sheetData?: Record<string, any>;
 }

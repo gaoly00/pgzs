@@ -20,7 +20,8 @@
       "Bash(npx eslint \"src/app/\\(dashboard\\)/admin/page.tsx\")",
       "Bash(npm install -D vitest @vitest/ui @testing-library/react @testing-library/jest-dom jsdom)",
       "Bash(npm test -- --run)",
-      "Bash(npm install -D @vitejs/plugin-react)"
+      "Bash(npm install -D @vitejs/plugin-react)",
+      "Bash(npx next:*)"
     ]
   }
 }
